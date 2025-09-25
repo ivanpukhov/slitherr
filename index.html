@@ -409,6 +409,7 @@
     const CAMERA_ZOOM = 1.18
     const MAX_PREDICTION_SECONDS = 0.45
     const SEGMENT_SPACING = 6
+    const LENGTH_EPS = 1e-3
     const MINIMAP_SIZE = 188
 
     function setCanvasSize() {
@@ -796,10 +797,12 @@
             })
         }
         let resampled = resamplePath(result, SEGMENT_SPACING)
-        const maxSegments = Math.max(2, Math.floor(Math.max(length, SEGMENT_SPACING * 2) / SEGMENT_SPACING))
-        if (resampled.length > maxSegments) {
-            resampled = resampled.slice(resampled.length - maxSegments)
+        const targetLength = Math.max(typeof length === 'number' ? length : 0, SEGMENT_SPACING * 2)
+        const maxPoints = Math.max(2, 1 + Math.ceil(targetLength / SEGMENT_SPACING))
+        if (resampled.length > maxPoints) {
+            resampled = resampled.slice(resampled.length - maxPoints)
         }
+        fitPathLength(resampled, targetLength, SEGMENT_SPACING)
         return resampled
     }
 
@@ -810,6 +813,7 @@
         }
         if (!snake.renderPath || !snake.renderPath.length) {
             snake.renderPath = targetPath.map((p) => ({ x: p.x, y: p.y }))
+            fitPathLength(snake.renderPath, Math.max(SEGMENT_SPACING * 2, snake.length || 0), SEGMENT_SPACING)
             return
         }
         const smoothed = []
@@ -817,7 +821,29 @@
         const blend = 0.65
         for (let i = 0; i < targetPath.length; i++) {
             const target = targetPath[i]
-            if (i === 0 || i === targetPath.length - 1 || i >= prev.length) {
+            if (i === 0) {
+                const prevPoint = prev[0]
+                if (!prevPoint) {
+                    smoothed.push({ x: target.x, y: target.y })
+                } else {
+                    const tailDist = Math.hypot(target.x - prevPoint.x, target.y - prevPoint.y)
+                    if (tailDist > SEGMENT_SPACING * 12) {
+                        smoothed.push({ x: target.x, y: target.y })
+                    } else {
+                        const tailBlend = tailDist > SEGMENT_SPACING * 4 ? 0.55 : 0.35
+                        smoothed.push({
+                            x: lerp(prevPoint.x, target.x, tailBlend),
+                            y: lerp(prevPoint.y, target.y, tailBlend)
+                        })
+                    }
+                }
+            } else if (i === 1 && prev.length > 1) {
+                const point = prev[1]
+                smoothed.push({
+                    x: lerp(point.x, target.x, 0.55),
+                    y: lerp(point.y, target.y, 0.55)
+                })
+            } else if (i === targetPath.length - 1 || i >= prev.length) {
                 smoothed.push({ x: target.x, y: target.y })
             } else {
                 const point = prev[i]
@@ -828,6 +854,7 @@
             }
         }
         snake.renderPath = smoothed
+        fitPathLength(snake.renderPath, Math.max(SEGMENT_SPACING * 2, snake.length || 0), SEGMENT_SPACING)
     }
 
     function resamplePath(points, spacing) {
@@ -861,6 +888,111 @@
             output.push({ x: last.x, y: last.y })
         }
         return output
+    }
+
+    function normalizePathStart(points) {
+        if (!points) return
+        while (points.length > 1) {
+            const first = points[0]
+            const second = points[1]
+            if (!first || !second) break
+            if (!Number.isFinite(first.x) || !Number.isFinite(first.y)) {
+                points.shift()
+                continue
+            }
+            if (!Number.isFinite(second.x) || !Number.isFinite(second.y)) {
+                points.splice(1, 1)
+                continue
+            }
+            const segLen = Math.hypot(second.x - first.x, second.y - first.y)
+            if (segLen <= LENGTH_EPS) {
+                points.shift()
+            } else {
+                break
+            }
+        }
+    }
+
+    function pathLength(points) {
+        if (!Array.isArray(points) || points.length < 2) return 0
+        let total = 0
+        for (let i = 1; i < points.length; i++) {
+            const prev = points[i - 1]
+            const cur = points[i]
+            if (!prev || !cur) continue
+            const dx = cur.x - prev.x
+            const dy = cur.y - prev.y
+            total += Math.hypot(dx, dy)
+        }
+        return total
+    }
+
+    function trimPathFront(points, amount) {
+        if (!Array.isArray(points) || points.length < 2) return
+        let remaining = amount
+        while (remaining > LENGTH_EPS && points.length > 1) {
+            normalizePathStart(points)
+            if (points.length <= 1) break
+            const first = points[0]
+            const second = points[1]
+            const dx = second.x - first.x
+            const dy = second.y - first.y
+            const segLen = Math.hypot(dx, dy)
+            if (segLen <= LENGTH_EPS) {
+                points.shift()
+                continue
+            }
+            if (segLen <= remaining) {
+                points.shift()
+                remaining -= segLen
+            } else {
+                const ratio = remaining / segLen
+                points[0] = {
+                    x: first.x + dx * ratio,
+                    y: first.y + dy * ratio
+                }
+                remaining = 0
+            }
+        }
+    }
+
+    function extendPathFront(points, amount, spacing) {
+        if (!Array.isArray(points) || points.length < 2) return
+        let remaining = amount
+        const step = Math.max(spacing || SEGMENT_SPACING, SEGMENT_SPACING * 0.5)
+        let guard = 0
+        while (remaining > LENGTH_EPS && points.length > 1 && guard++ < 64) {
+            normalizePathStart(points)
+            if (points.length <= 1) break
+            const first = points[0]
+            const second = points[1]
+            const dx = first.x - second.x
+            const dy = first.y - second.y
+            const segLen = Math.hypot(dx, dy)
+            if (segLen <= LENGTH_EPS) break
+            const extend = Math.min(remaining, step)
+            const ux = dx / segLen
+            const uy = dy / segLen
+            points.unshift({
+                x: first.x + ux * extend,
+                y: first.y + uy * extend
+            })
+            remaining -= extend
+        }
+    }
+
+    function fitPathLength(points, targetLength, spacing) {
+        if (!Array.isArray(points) || points.length < 2) return
+        const safeTarget = Math.max(targetLength || 0, SEGMENT_SPACING * 2)
+        let total = pathLength(points)
+        if (!Number.isFinite(total)) return
+        if (total > safeTarget + SEGMENT_SPACING * 0.25) {
+            trimPathFront(points, total - safeTarget)
+            total = pathLength(points)
+        }
+        if (total + SEGMENT_SPACING * 0.25 < safeTarget) {
+            extendPathFront(points, safeTarget - total, spacing)
+        }
     }
 
     function updateHUD(score) {
@@ -971,6 +1103,10 @@
                 if (snake.renderPath && snake.renderPath.length) {
                     snake.renderPath[snake.renderPath.length - 1] = { x: predictedX, y: predictedY }
                 }
+            }
+            if (snake.renderPath && snake.renderPath.length > 1) {
+                const desiredLength = Math.max(SEGMENT_SPACING * 2, snake.length || snake.displayLength || 0)
+                fitPathLength(snake.renderPath, desiredLength, SEGMENT_SPACING)
             }
             const baseX = typeof snake.displayX === 'number' ? snake.displayX : snake.targetX
             const baseY = typeof snake.displayY === 'number' ? snake.displayY : snake.targetY

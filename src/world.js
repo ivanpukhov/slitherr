@@ -79,6 +79,44 @@ function resamplePath(points, spacing) {
     return output
 }
 
+function computePathLength(points) {
+    let sum = 0
+    for (let i = 1; i < points.length; i++) {
+        const prev = points[i - 1]
+        const cur = points[i]
+        sum += Math.hypot(cur.x - prev.x, cur.y - prev.y)
+    }
+    return sum
+}
+
+function trimPathToLength(player, maxLength) {
+    const target = Math.max(0, maxLength)
+    while (player.path.length > 1 && player.pathLen > target) {
+        const first = player.path[0]
+        const second = player.path[1]
+        const segLen = Math.hypot(second.x - first.x, second.y - first.y)
+        if (!Number.isFinite(segLen) || segLen === 0) {
+            player.path.shift()
+            continue
+        }
+        const excess = player.pathLen - target
+        if (excess >= segLen - 1e-6) {
+            player.path.shift()
+            player.pathLen -= segLen
+            if (player.pathLen < 0) player.pathLen = 0
+        } else {
+            const ratio = excess / segLen
+            player.path[0] = {
+                x: first.x + (second.x - first.x) * ratio,
+                y: first.y + (second.y - first.y) * ratio
+            }
+            player.pathLen -= excess
+            if (player.pathLen < 0) player.pathLen = 0
+            break
+        }
+    }
+}
+
 class World {
     constructor(cfg, killLogger) {
         this.cfg = cfg
@@ -143,8 +181,9 @@ class World {
             length: this.cfg.baseLength,
             alive: true,
             boost: false,
-            path: [],
+            path: [{ x: spawn.x, y: spawn.y }],
             pathLen: 0,
+            pathCarry: 0,
             lastDrop: 0,
             lastSeenTick: 0,
             lastInputTs: 0,
@@ -177,8 +216,9 @@ class World {
         p.length = this.cfg.baseLength
         p.alive = true
         p.boost = false
-        p.path = []
+        p.path = [{ x: p.x, y: p.y }]
         p.pathLen = 0
+        p.pathCarry = 0
         p.r = this.cfg.headRadius
     }
 
@@ -226,25 +266,62 @@ class World {
             p.x = border.x
             p.y = border.y
 
-            // записываем точку пути, если голова прошла достаточно расстояния
-            const last = p.path[p.path.length - 1]
-            if (
-                !last ||
-                dist2(last.x, last.y, p.x, p.y) >
-                this.cfg.pathPointSpacing * this.cfg.pathPointSpacing
-            ) {
-                p.path.push({ x: p.x, y: p.y })
+            // обновляем полилинию хвоста
+            const spacing = this.cfg.segmentSpacing
+            if (!Array.isArray(p.path) || p.path.length === 0) {
+                p.path = [{ x: p.x, y: p.y }]
+                p.pathLen = 0
+                p.pathCarry = 0
+            } else {
+                const previousHead = p.path[p.path.length - 1]
+                const dx = p.x - previousHead.x
+                const dy = p.y - previousHead.y
+                const distance = Math.hypot(dx, dy)
+                if (distance > 0) {
+                    let consumed = 0
+                    while (p.pathCarry + (distance - consumed) >= spacing) {
+                        const step = spacing - p.pathCarry
+                        consumed += step
+                        const t = consumed / distance
+                        const nx = previousHead.x + dx * t
+                        const ny = previousHead.y + dy * t
+                        p.path.push({ x: nx, y: ny })
+                        p.pathLen += step
+                        p.pathCarry = 0
+                    }
+                    const remainder = distance - consumed
+                    if (remainder > 1e-6) {
+                        p.pathCarry += remainder
+                        p.pathLen += remainder
+                    } else {
+                        p.pathCarry = 0
+                    }
+                    const lastPoint = p.path[p.path.length - 1]
+                    if (!lastPoint || Math.hypot(lastPoint.x - p.x, lastPoint.y - p.y) > 1e-5) {
+                        p.path.push({ x: p.x, y: p.y })
+                    } else {
+                        lastPoint.x = p.x
+                        lastPoint.y = p.y
+                    }
+                } else {
+                    const headPoint = p.path[p.path.length - 1]
+                    if (headPoint) {
+                        headPoint.x = p.x
+                        headPoint.y = p.y
+                    } else {
+                        p.path.push({ x: p.x, y: p.y })
+                    }
+                }
             }
 
-            // считаем максимальное количество сегментов для хвоста
-            const maxSegments = Math.floor(p.length / this.cfg.segmentSpacing)
-            if (p.path.length > maxSegments) {
-                p.path = p.path.slice(p.path.length - maxSegments)
-            }
+            // обрезаем хвост по целевой длине
+            const desiredPathLength = Math.max(spacing * 2, p.length)
+            trimPathToLength(p, desiredPathLength)
 
             // ограничитель (безопасность, если что-то пошло не так)
             if (p.path.length > this.cfg.maxPathPoints) {
                 p.path = p.path.slice(p.path.length - this.cfg.maxPathPoints)
+                p.pathLen = computePathLength(p.path)
             }
 
             // буст — отнимаем длину и дропаем еду
@@ -330,6 +407,8 @@ class World {
 
         const dropPath = victim.path.slice()
         victim.path = []
+        victim.pathLen = 0
+        victim.pathCarry = 0
 
         const totalValue = Math.max(1, Math.floor(victim.length))
         const palette = this.skinPalette(victim.skin)
@@ -409,7 +488,7 @@ class World {
                     x: o.x,
                     y: o.y,
                     angle: o.angle,
-                    length: Math.floor(o.length),
+                    length: o.length,
                     alive: o.alive,
                     name: o.name,
                     skin: o.skin,

@@ -174,7 +174,7 @@ setInterval(() => {
                 x: p.x,
                 y: p.y,
                 angle: p.angle,
-                length: Math.floor(p.length),
+                length: p.length,
                 alive: p.alive
             },
             players: aoi.players,
