@@ -3,14 +3,13 @@ const { SpatialHash } = require('./spatial')
 const { v4: randomUUID } = require('uuid')
 
 const SKIN_PRESETS = {
-    rainbow: ['#ff004d', '#ff7a00', '#ffd400', '#2bff00', '#00d5ff', '#6a00ff', '#ff00e5'],
-    ocean: ['#7ef3ff', '#45a9ff', '#0c5bd6'],
-    lime: ['#ccffd7', '#62f2a0', '#1fb86a'],
-    fire: ['#fff1a6', '#ffb84c', '#ff5a36', '#d81e1e'],
-    candy: ['#ffe3f1', '#ff9fd2', '#ff58b4', '#c53df0'],
-    flag_ru: ['#ffffff', '#0052b4', '#d80027'],
-    flag_kz: ['#00aed6', '#ffd34f', '#00aed6', '#ffd34f'],
-    default: ['#cbd5e1', '#94a3b8', '#64748b']
+    default: ['#38bdf8'],
+    emerald: ['#34d399'],
+    crimson: ['#ef4444'],
+    amber: ['#f59e0b'],
+    violet: ['#a855f7'],
+    obsidian: ['#475569'],
+    mint: ['#14b8a6']
 }
 
 function rnd(a, b) { return a + Math.random() * (b - a) }

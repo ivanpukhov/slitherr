@@ -348,7 +348,7 @@
         <div class="skin-picker">
             <div class="caption">
                 <span>Скины</span>
-                <span id="skinName">Rainbow</span>
+                <span id="skinName">Sky</span>
             </div>
             <div id="skinList" class="skin-list"></div>
         </div>
@@ -383,33 +383,32 @@
     const minimapCtx = minimapCanvas.getContext('2d')
 
     const SKINS = {
-        rainbow: ['#ff004d', '#ff7a00', '#ffd400', '#2bff00', '#00d5ff', '#6a00ff', '#ff00e5'],
-        ocean: ['#7ef3ff', '#45a9ff', '#0c5bd6'],
-        lime: ['#ccffd7', '#62f2a0', '#1fb86a'],
-        fire: ['#fff1a6', '#ffb84c', '#ff5a36', '#d81e1e'],
-        candy: ['#ffe3f1', '#ff9fd2', '#ff58b4', '#c53df0'],
-        flag_ru: ['#ffffff', '#0052b4', '#d80027'],
-        flag_kz: ['#00aed6', '#ffd34f', '#00aed6', '#ffd34f'],
-        default: ['#cbd5e1', '#94a3b8', '#64748b']
+        default: ['#38bdf8'],
+        emerald: ['#34d399'],
+        crimson: ['#ef4444'],
+        amber: ['#f59e0b'],
+        violet: ['#a855f7'],
+        obsidian: ['#475569'],
+        mint: ['#14b8a6']
     }
 
     const SKIN_LABELS = {
-        rainbow: 'Rainbow',
-        ocean: 'Ocean',
-        lime: 'Lime',
-        fire: 'Fire',
-        candy: 'Candy',
-        flag_ru: 'Russia',
-        flag_kz: 'Kazakhstan',
-        default: 'Classic'
+        default: 'Sky',
+        emerald: 'Emerald',
+        crimson: 'Crimson',
+        amber: 'Amber',
+        violet: 'Violet',
+        obsidian: 'Obsidian',
+        mint: 'Mint'
     }
 
     const FOOD_PULSE_SPEED = 4.2
     const CAMERA_SMOOTH = 6.5
-    const POSITION_SMOOTH = 12
-    const ANGLE_SMOOTH = 10
+    const POSITION_SMOOTH = 14
+    const ANGLE_SMOOTH = 12
     const CAMERA_ZOOM = 1.18
     const MAX_PREDICTION_SECONDS = 0.45
+    const SEGMENT_SPACING = 6
     const MINIMAP_SIZE = 188
 
     function setCanvasSize() {
@@ -440,13 +439,11 @@
         hexPattern = buildHexPattern()
     })
 
-    let selectedSkin = 'rainbow'
+    let selectedSkin = 'default'
 
-    function gradientForSkin(colors) {
+    function colorForSkin(colors) {
         if (!colors || colors.length === 0) return '#94a3b8'
-        if (colors.length === 1) return colors[0]
-        const stops = colors.map((color, idx) => `${color} ${(idx / (colors.length - 1)) * 100}%`).join(', ')
-        return `linear-gradient(135deg, ${stops})`
+        return colors[0]
     }
 
     function buildSkinPicker() {
@@ -457,7 +454,8 @@
             btn.className = 'skin-option'
             btn.dataset.skin = key
             btn.dataset.name = SKIN_LABELS[key] || key
-            btn.style.background = gradientForSkin(colors)
+            btn.style.background = colorForSkin(colors)
+            btn.style.backgroundImage = 'none'
             btn.addEventListener('click', () => {
                 selectedSkin = key
                 updateSkinPicker()
@@ -796,8 +794,12 @@
                 y: headY - Math.sin(dir) * backOffset
             })
         }
-        const spacing = Math.max(5, Math.min(12, 5.5 + Math.pow(Math.max(length, 1), 0.35)))
-        return resamplePath(result, spacing)
+        let resampled = resamplePath(result, SEGMENT_SPACING)
+        const maxSegments = Math.max(2, Math.floor(Math.max(length, SEGMENT_SPACING * 2) / SEGMENT_SPACING))
+        if (resampled.length > maxSegments) {
+            resampled = resampled.slice(resampled.length - maxSegments)
+        }
+        return resampled
     }
 
     function smoothAssignPath(snake, targetPath) {
@@ -809,21 +811,22 @@
             snake.renderPath = targetPath.map((p) => ({ x: p.x, y: p.y }))
             return
         }
-        const blend = 0.75
-        const limit = Math.min(snake.renderPath.length, targetPath.length)
-        const merged = []
-        for (let i = 0; i < limit; i++) {
-            const a = snake.renderPath[i]
-            const b = targetPath[i]
-            merged.push({
-                x: lerp(a.x, b.x, blend),
-                y: lerp(a.y, b.y, blend)
-            })
+        const smoothed = []
+        const prev = snake.renderPath
+        const blend = 0.65
+        for (let i = 0; i < targetPath.length; i++) {
+            const target = targetPath[i]
+            if (i === 0 || i === targetPath.length - 1 || i >= prev.length) {
+                smoothed.push({ x: target.x, y: target.y })
+            } else {
+                const point = prev[i]
+                smoothed.push({
+                    x: lerp(point.x, target.x, blend),
+                    y: lerp(point.y, target.y, blend)
+                })
+            }
         }
-        for (let i = limit; i < targetPath.length; i++) {
-            merged.push({ x: targetPath[i].x, y: targetPath[i].y })
-        }
-        snake.renderPath = merged
+        snake.renderPath = smoothed
     }
 
     function resamplePath(points, spacing) {
@@ -976,7 +979,7 @@
             snake.displayY = lerp(baseY, snake.targetY, smoothPos)
             snake.displayAngle = lerpAngle(baseAngle, snake.targetAngle, smoothAngle)
             snake.displayDir = lerpAngle(baseDir, snake.targetDir, smoothAngle)
-            snake.displayLength = lerp(typeof snake.displayLength === 'number' ? snake.displayLength : snake.length, snake.length, Math.min(1, dt * 6))
+            snake.displayLength = snake.length
             if (!snake.alive && snake.renderPath.length) {
                 snake.renderPath = snake.renderPath.slice(-1)
             }
@@ -1121,51 +1124,42 @@
             const path = snake.renderPath
             if (!path || path.length < 2) continue
             const colors = SKINS[snake.skin] || SKINS.default
+            const baseColor = colors[0] || '#94a3b8'
             const displayLength = snake.displayLength || snake.length || 20
-            const bodyRadius = Math.max(6, Math.min(26, 4.6 + Math.pow(Math.max(displayLength, 1), 0.4)))
-            const headRadius = bodyRadius
+            const bodyRadius = Math.max(7.2, Math.min(30, 6.4 + Math.pow(Math.max(displayLength, 1), 0.42)))
+            const headRadius = bodyRadius * 1.02
             const headX = typeof snake.displayX === 'number' ? snake.displayX : snake.targetX
             const headY = typeof snake.displayY === 'number' ? snake.displayY : snake.targetY
             const head = { x: headX, y: headY }
-            const tail = path[0]
-            const gradient = ctx.createLinearGradient(tail.x, tail.y, head.x, head.y)
-            if (colors.length === 1) {
-                gradient.addColorStop(0, colors[0])
-                gradient.addColorStop(1, colors[0])
-            } else {
-                const denom = colors.length - 1
-                colors.forEach((color, idx) => {
-                    gradient.addColorStop(idx / denom, color)
-                })
-            }
             path[path.length - 1] = { x: head.x, y: head.y }
 
             ctx.lineJoin = 'round'
             ctx.lineCap = 'round'
-            ctx.strokeStyle = 'rgba(8, 13, 24, 0.7)'
+            ctx.strokeStyle = shadeColor(baseColor, -0.55)
             ctx.lineWidth = bodyRadius * 2 + 6
-            strokePath(path)
+            strokeSmoothPath(path)
 
-            ctx.strokeStyle = gradient
+            ctx.strokeStyle = baseColor
             ctx.lineWidth = bodyRadius * 2
-            ctx.shadowColor = withAlpha(colors[0], 0.42)
-            ctx.shadowBlur = bodyRadius * 0.8
-            strokePath(path)
+            ctx.shadowColor = withAlpha(baseColor, 0.45)
+            ctx.shadowBlur = bodyRadius * 0.9
+            strokeSmoothPath(path)
 
             ctx.shadowBlur = 0
+            ctx.shadowColor = 'transparent'
             const highlight = path.slice(Math.max(0, path.length - 18))
             if (highlight.length >= 2) {
                 ctx.globalAlpha = 0.55
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)'
-                ctx.lineWidth = bodyRadius * 0.6
-                strokePath(highlight)
+                ctx.strokeStyle = withAlpha('#ffffff', 0.2)
+                ctx.lineWidth = bodyRadius * 0.58
+                strokeSmoothPath(highlight)
                 ctx.globalAlpha = 1
             }
 
             const headGradient = ctx.createRadialGradient(head.x, head.y, headRadius * 0.2, head.x, head.y, headRadius * 1.4)
             headGradient.addColorStop(0, '#ffffff')
-            headGradient.addColorStop(0.22, colors[0])
-            headGradient.addColorStop(1, shadeColor(colors[0], -0.4))
+            headGradient.addColorStop(0.22, baseColor)
+            headGradient.addColorStop(1, shadeColor(baseColor, -0.4))
             ctx.fillStyle = headGradient
             ctx.beginPath()
             ctx.arc(head.x, head.y, headRadius, 0, Math.PI * 2)
@@ -1251,6 +1245,7 @@
         snakes.sort((a, b) => (a.displayLength || a.length || 0) - (b.displayLength || b.length || 0))
         for (const snake of snakes) {
             const colors = SKINS[snake.skin] || SKINS.default
+            const baseColor = colors[0] || '#94a3b8'
             const hx = cx + (((typeof snake.displayX === 'number' ? snake.displayX : snake.targetX) || centerX) - centerX) * scale
             const hy = cy + (((typeof snake.displayY === 'number' ? snake.displayY : snake.targetY) || centerY) - centerY) * scale
             const headSize = Math.max(3, Math.pow(Math.max(snake.displayLength || snake.length || 20, 20), 0.27) * 0.6)
@@ -1267,12 +1262,12 @@
                 const tail = path[path.length - 1]
                 minimapCtx.lineTo(cx + (tail.x - centerX) * scale, cy + (tail.y - centerY) * scale)
                 minimapCtx.lineWidth = Math.max(1.2, headSize * 0.75)
-                minimapCtx.strokeStyle = withAlpha(colors[0], snake.id === state.meId ? 0.95 : 0.6)
+                minimapCtx.strokeStyle = withAlpha(baseColor, snake.id === state.meId ? 0.95 : 0.6)
                 minimapCtx.lineJoin = 'round'
                 minimapCtx.lineCap = 'round'
                 minimapCtx.stroke()
             }
-            minimapCtx.fillStyle = colors[0]
+            minimapCtx.fillStyle = baseColor
             minimapCtx.beginPath()
             minimapCtx.arc(hx, hy, headSize, 0, Math.PI * 2)
             minimapCtx.fill()
@@ -1287,12 +1282,23 @@
         minimapCtx.restore()
     }
 
-    function strokePath(points) {
+    function strokeSmoothPath(points) {
         if (!points || points.length < 2) return
         ctx.beginPath()
         ctx.moveTo(points[0].x, points[0].y)
-        for (let i = 1; i < points.length; i++) {
-            ctx.lineTo(points[i].x, points[i].y)
+        if (points.length === 2) {
+            ctx.lineTo(points[1].x, points[1].y)
+        } else {
+            for (let i = 1; i < points.length - 1; i++) {
+                const current = points[i]
+                const next = points[i + 1]
+                const midX = (current.x + next.x) / 2
+                const midY = (current.y + next.y) / 2
+                ctx.quadraticCurveTo(current.x, current.y, midX, midY)
+            }
+            const penultimate = points[points.length - 2]
+            const last = points[points.length - 1]
+            ctx.quadraticCurveTo(penultimate.x, penultimate.y, last.x, last.y)
         }
         ctx.stroke()
     }
