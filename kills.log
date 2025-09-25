@@ -26,3 +26,12 @@
 {"killer":"2bb3a5e0-60dd-45b7-a37d-8071c98bdbac","victim":"71e19efa-b8d2-4719-a97e-5fd84e2ce2ba","x":4000,"y":17.266618942431215,"tick":20104,"victimLength":32,"killerLength":82,"reason":"head_vs_body"}
 {"killer":"cf77fe49-147f-4106-bd5d-d2f014e6af48","victim":"2bb3a5e0-60dd-45b7-a37d-8071c98bdbac","x":4000,"y":0,"tick":22368,"victimLength":86,"killerLength":46,"reason":"head_vs_body"}
 {"killer":"28ef312b-de43-474d-bf6e-a618f7fb4c7f","victim":"e05486e0-2a6f-4620-ac7c-4d3ca8397b98","x":0,"y":14.327583511008761,"tick":59002,"victimLength":38,"killerLength":50,"reason":"head_vs_body"}
+{"killer":"d0a47a62-75f9-4cdc-aca8-e84f2f2081d1","victim":"4f1ea088-d103-403c-b0e3-413e825cd508","x":4000,"y":3970.0446489512537,"tick":3822,"victimLength":22,"killerLength":23,"reason":"head_vs_body"}
+{"killer":"d0a47a62-75f9-4cdc-aca8-e84f2f2081d1","victim":"382e89db-e6f0-4744-ad4e-2e6cd64379f1","x":4000,"y":3969.5388657002404,"tick":4316,"victimLength":27,"killerLength":30,"reason":"head_vs_body"}
+{"killer":"d02f8eb8-adab-4453-8b08-c0f64a67408e","victim":"f39fa78e-ea1b-46b8-81db-356ab82bd038","x":2811.0335098417036,"y":555.4697170883588,"tick":4480,"victimLength":32,"killerLength":42,"reason":"head_vs_body"}
+{"killer":"d0a47a62-75f9-4cdc-aca8-e84f2f2081d1","victim":"d1fe1d73-6c40-41fc-836b-3a8dd9a3c875","x":4000,"y":3970.569573005094,"tick":4534,"victimLength":43,"killerLength":40,"reason":"head_vs_body"}
+{"killer":"71608b2f-bfc5-4873-aa49-482b44864f1b","victim":"d0a47a62-75f9-4cdc-aca8-e84f2f2081d1","x":1513.182038187307,"y":1760.8858376081967,"tick":5656,"victimLength":105,"killerLength":30,"reason":"head_vs_body"}
+{"killer":"d02f8eb8-adab-4453-8b08-c0f64a67408e","victim":"54dc3ae8-38d4-4565-a93e-0c7fd7f2b66b","x":4000,"y":16.713517302007368,"tick":6160,"victimLength":69,"killerLength":47,"reason":"head_vs_body"}
+{"killer":"71608b2f-bfc5-4873-aa49-482b44864f1b","victim":"0b246ec7-27aa-4635-9a00-7f00da2abd75","x":2595.388167488493,"y":0,"tick":6725,"victimLength":38,"killerLength":167,"reason":"head_vs_body"}
+{"killer":"89b11b97-bfc7-4ae9-8722-1169e8eaaec2","victim":"71b61e71-04d8-4d52-8a75-98ef5459b87e","x":3673.551955638014,"y":0,"tick":41021,"victimLength":34,"killerLength":269,"reason":"head_vs_body"}
+{"killer":"efc4b36b-95b2-4420-8872-9c982afebd2a","victim":"e30ca336-8413-4e39-a8ea-5951ff34eb84","x":4000,"y":15.128255146706053,"tick":59616,"victimLength":31,"killerLength":28,"reason":"head_vs_body"}
