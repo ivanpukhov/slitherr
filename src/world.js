@@ -488,7 +488,7 @@ class World {
                     x: o.x,
                     y: o.y,
                     angle: o.angle,
-                    length: Math.floor(o.length),
+                    length: o.length,
                     alive: o.alive,
                     name: o.name,
                     skin: o.skin,
