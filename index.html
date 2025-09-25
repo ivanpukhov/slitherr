@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Slither Client</title>
+    <style>
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #0b0f16
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh
+        }
+
+        #score {
+            position: fixed;
+            top: 12px;
+            left: 14px;
+            color: #fff;
+            font: 600 18px/1 Inter, Arial
+        }
+
+        #leaderboard {
+            position: fixed;
+            top: 12px;
+            right: 14px;
+            color: #fff;
+            font: 600 16px/1 Inter, Arial;
+            text-align: right
+        }
+
+        #deathScreen {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, .86);
+            color: #fff;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            font: 700 24px/1 Inter, Arial;
+            z-index: 5
+        }
+
+        #nicknameScreen {
+            position: fixed;
+            inset: 0;
+            background: #0b0f16;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            font: 600 18px/1 Inter, Arial;
+            z-index: 6
+        }
+
+        #nicknameScreen input {
+            padding: 10px 12px;
+            font: 600 18px/1 Inter, Arial;
+            margin-bottom: 12px;
+            border-radius: 10px;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: #e2e8f0;
+            outline: none
+        }
+
+        #nicknameScreen button {
+            padding: 10px 16px;
+            font: 700 18px/1 Inter, Arial;
+            border-radius: 12px;
+            border: 0;
+            background: #22c55e;
+            color: #08141f;
+            cursor: pointer
+        }
+    </style>
+</head>
+
+<body>
+<div id="nicknameScreen">
+    <h2 style="margin:0 0 12px 0">Введите никнейм</h2>
+    <input id="nicknameInput" placeholder="Ваш ник" />
+    <button id="startBtn">Играть</button>
+</div>
+<div id="score">Score: 0</div>
+<div id="leaderboard"></div>
+<div id="deathScreen"></div>
+<canvas id="canvas"></canvas>
+
+<script>
+    const DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1))
+    const canvas = document.getElementById("canvas")
+    const ctx = canvas.getContext("2d")
+    const scoreEl = document.getElementById("score")
+    const leaderboardEl = document.getElementById("leaderboard")
+    const deathScreen = document.getElementById("deathScreen")
+    const nicknameScreen = document.getElementById("nicknameScreen")
+    const nicknameInput = document.getElementById("nicknameInput")
+    const startBtn = document.getElementById("startBtn")
+
+    let ws, you = null, me = null, alive = false
+    let players = {}, foods = []
+    let lastSnapshotTs = 0
+
+    const SKINS = {
+        rainbow: ["#ff004d", "#ff7a00", "#ffd400", "#2bff00", "#00d5ff", "#6a00ff", "#ff00e5"],
+        ocean: ["#7ef3ff", "#45a9ff", "#0c5bd6"],
+        lime: ["#ccffd7", "#62f2a0", "#1fb86a"],
+        fire: ["#fff1a6", "#ffb84c", "#ff5a36", "#d81e1e"],
+        candy: ["#ffe3f1", "#ff9fd2", "#ff58b4", "#c53df0"],
+        flag_ru: ["#ffffff", "#0052b4", "#d80027"],
+        flag_kz: ["#00aed6", "#ffd34f", "#00aed6", "#ffd34f"],
+        default: ["#cbd5e1", "#94a3b8", "#64748b"]
+    }
+
+    function setCanvasSize() {
+        const w = window.innerWidth, h = window.innerHeight
+        canvas.width = Math.floor(w * DPR)
+        canvas.height = Math.floor(h * DPR)
+        canvas.style.width = w + "px"
+        canvas.style.height = h + "px"
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
+    }
+    setCanvasSize()
+    window.addEventListener("resize", setCanvasSize)
+
+    let hexPattern = null
+    function buildHexPattern() {
+        const s = 84
+        const off = document.createElement("canvas")
+        off.width = s; off.height = s
+        const c = off.getContext("2d")
+        c.fillStyle = "#0b0f16"
+        c.fillRect(0, 0, s, s)
+        c.strokeStyle = "rgba(255,255,255,.04)"
+        c.lineWidth = 1
+        c.beginPath()
+        for (let i = 0; i < 6; i++) {
+            const a = Math.PI / 3 * i
+            const x = s / 2 + 28 * Math.cos(a)
+            const y = s / 2 + 28 * Math.sin(a)
+            if (i === 0) c.moveTo(x, y); else c.lineTo(x, y)
+        }
+        c.closePath()
+        c.stroke()
+        hexPattern = ctx.createPattern(off, "repeat")
+    }
+    buildHexPattern()
+
+    function connect(name) {
+        ws = new WebSocket("ws://localhost:8080")
+        ws.onopen = () => ws.send(JSON.stringify({ type: "join", name, skin: "rainbow" }))
+        ws.onmessage = e => {
+            const m = JSON.parse(e.data)
+            if (m.type === "welcome") { you = m.id; alive = true }
+            if (m.type === "snapshot") {
+                lastSnapshotTs = performance.now()
+                players = {}; m.players.forEach(p => players[p.id] = p)
+                foods = m.foods || []
+                me = m.you || null
+            }
+            if (m.type === "death") {
+                if (m.food && m.food.length) foods.push(...m.food.map(f => ({ ...f, big: true })))
+                if (players[m.id]) delete players[m.id]
+                if (m.id === you) { alive = false; showDeath(m.killerName || "", m.yourScore || 0) }
+            }
+        }
+        ws.onclose = () => alive = false
+    }
+
+    function sendInput(angle, boost) {
+        if (ws && ws.readyState === 1 && alive) ws.send(JSON.stringify({ type: "input", angle, boost }))
+    }
+
+    document.addEventListener("mousemove", e => {
+        if (!me || !alive) return
+        const r = canvas.getBoundingClientRect()
+        const cx = r.width / 2, cy = r.height / 2
+        const angle = Math.atan2(e.clientY - cy, e.clientX - cx)
+        sendInput(angle, false)
+    })
+    document.addEventListener("mousedown", () => sendInput(null, true))
+    document.addEventListener("mouseup", () => sendInput(null, false))
+
+    function drawBackground(camX, camY) {
+        ctx.save()
+        ctx.fillStyle = "#0b0f16"
+        ctx.fillRect(0, 0, canvas.width / DPR, canvas.height / DPR)
+        ctx.translate(-(camX % 84) + canvas.width / DPR / 2, -(camY % 84) + canvas.height / DPR / 2)
+        ctx.fillStyle = hexPattern
+        ctx.fillRect(-100, -100, canvas.width / DPR + 200, canvas.height / DPR + 200)
+        ctx.restore()
+    }
+
+    function glowDot(x, y, r, base) {
+        const g = ctx.createRadialGradient(x, y, 1, x, y, r + 10)
+        g.addColorStop(0, "#fff")
+        g.addColorStop(.35, base)
+        g.addColorStop(1, "rgba(0,0,0,0)")
+        ctx.fillStyle = g
+        ctx.beginPath(); ctx.arc(x, y, r + 10, 0, Math.PI * 2); ctx.fill()
+        const g2 = ctx.createRadialGradient(x, y, 1, x, y, r)
+        g2.addColorStop(0, "#fff")
+        g2.addColorStop(.2, "#fff")
+        g2.addColorStop(1, base)
+        ctx.fillStyle = g2
+        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill()
+    }
+
+    function drawFoods(camX, camY) {
+        const cx = canvas.width / DPR / 2, cy = canvas.height / DPR / 2
+        for (const f of foods) {
+            const sx = cx + (f.x - camX), sy = cy + (f.y - camY)
+            const base = f.color || randomFoodColor(f.seed || 0)
+            const r = Math.max(3, Math.min(10, (f.size || 4))) * (f.big ? 1.6 : 1)
+            glowDot(sx, sy, r, base)
+        }
+    }
+
+    function randomFoodColor(seed) {
+        const palette = ["#ffd166", "#fca311", "#ff5e57", "#4cd137", "#00e5ff", "#7d5fff", "#ff8bd2", "#b7fbff", "#caffbf", "#fdffb6", "#ffd6a5", "#bdb2ff"]
+        return palette[Math.abs(seed) % palette.length]
+    }
+
+    function lerp(a, b, t) { return a + (b - a) * t }
+
+    function drawSnake(p, camX, camY) {
+        const colors = SKINS[p.skin] || SKINS.default
+        const cx = canvas.width / DPR / 2, cy = canvas.height / DPR / 2
+        const bodyR = Math.max(7, Math.min(14, 6 + Math.log(1 + (p.length || 30)) / Math.log(1.3)))
+        const headR = bodyR + 2
+
+        if (p.path && p.path.length) {
+            for (let i = p.path.length - 1; i >= 0; i--) {
+                const seg = p.path[i]
+                const sx = cx + (seg.x - camX), sy = cy + (seg.y - camY)
+                const col = colors[i % colors.length]
+                const g = ctx.createRadialGradient(sx, sy, 2, sx, sy, bodyR + 3)
+                g.addColorStop(0, "#ffffff")
+                g.addColorStop(.25, col)
+                g.addColorStop(1, shade(col, .35))
+                ctx.fillStyle = g
+                ctx.beginPath(); ctx.arc(sx, sy, bodyR, 0, Math.PI * 2); ctx.fill()
+            }
+        }
+
+        const hx = cx + (p.x - camX), hy = cy + (p.y - camY)
+        const hg = ctx.createRadialGradient(hx, hy, 2, hx, hy, headR + 4)
+        hg.addColorStop(0, "#ffffff")
+        hg.addColorStop(.25, colors[0])
+        hg.addColorStop(1, shade(colors[0], .3))
+        ctx.fillStyle = hg
+        ctx.beginPath(); ctx.arc(hx, hy, headR, 0, Math.PI * 2); ctx.fill()
+
+        const eyeR = headR * 0.32, pupilR = headR * 0.16
+        const ang = p.dir || 0
+        const ex1 = hx + Math.cos(ang) * headR * 0.35 - Math.sin(ang) * headR * 0.25
+        const ey1 = hy + Math.sin(ang) * headR * 0.35 + Math.cos(ang) * headR * 0.25
+        const ex2 = hx + Math.cos(ang) * headR * 0.35 + Math.sin(ang) * headR * 0.25
+        const ey2 = hy + Math.sin(ang) * headR * 0.35 - Math.cos(ang) * headR * 0.25
+
+        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(ex1, ey1, eyeR, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(ex2, ey2, eyeR, 0, Math.PI * 2); ctx.fill()
+        const pxOff = headR * 0.12
+        ctx.fillStyle = "#111"; ctx.beginPath(); ctx.arc(ex1 + Math.cos(ang) * pxOff, ey1 + Math.sin(ang) * pxOff, pupilR, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(ex2 + Math.cos(ang) * pxOff, ey2 + Math.sin(ang) * pxOff, pupilR, 0, Math.PI * 2); ctx.fill()
+
+        ctx.fillStyle = "#e2e8f0"
+        ctx.font = "12px Inter,Arial"
+        ctx.fillText(p.name || "", hx - ctx.measureText(p.name || "").width / 2, hy - headR - 10)
+    }
+
+    function shade(hex, amt) {
+        const c = parseInt(hex.slice(1), 16)
+        let r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255
+        r = Math.max(0, Math.min(255, Math.round(lerp(r, 0, amt))))
+        g = Math.max(0, Math.min(255, Math.round(lerp(g, 0, amt))))
+        b = Math.max(0, Math.min(255, Math.round(lerp(b, 0, amt))))
+        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)
+    }
+
+    function renderHUD() {
+        scoreEl.textContent = "Score: " + (me ? Math.floor(me.length || 0) : 0)
+    }
+
+    function loop() {
+        requestAnimationFrame(loop)
+        if (!me) return
+        const camX = me.x, camY = me.y
+        drawBackground(camX, camY)
+        drawFoods(camX, camY)
+        const arr = Object.values(players)
+        for (let i = 0; i < arr.length; i++) drawSnake(arr[i], camX, camY)
+        renderHUD()
+    }
+    loop()
+
+    function renderLeaderboard(board) {
+        if (!board) return
+        leaderboardEl.innerHTML = "<b>Leaderboard</b><br>" + board.map((p, i) => `${i + 1}. ${p.name} — ${p.length}`).join("<br>")
+    }
+
+    function showDeath(killer, score) {
+        deathScreen.style.display = "flex"
+        deathScreen.innerHTML = `
+        <div style="margin-bottom:8px">Вас убил <b>${killer || "?"}</b></div>
+        <div style="margin-bottom:14px">Ваш счёт: ${score || 0}</div>
+        <button onclick="location.reload()" style="padding:10px 16px;border:0;border-radius:12px;background:#22c55e;color:#08141f;font:700 18px/1 Inter,Arial;cursor:pointer">Играть снова</button>
+    `
+    }
+
+    startBtn.onclick = () => {
+        const name = nicknameInput.value.trim() || "Anon"
+        nicknameScreen.style.display = "none"
+        connect(name)
+    }
+</script>
+</body>
+
+</html>
