@@ -1,329 +1,1033 @@
 <!DOCTYPE html>
 <html lang="ru">
-
 <head>
     <meta charset="utf-8" />
     <title>Slither Client</title>
     <style>
+        :root {
+            color-scheme: dark;
+            font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
         html,
         body {
             margin: 0;
             height: 100%;
             overflow: hidden;
-            background: #0b0f16
+            background: #05070d;
+            color: #e2e8f0;
         }
 
         canvas {
             display: block;
             width: 100vw;
-            height: 100vh
+            height: 100vh;
         }
 
-        #score {
+        .panel {
             position: fixed;
-            top: 12px;
-            left: 14px;
-            color: #fff;
-            font: 600 18px/1 Inter, Arial
+            backdrop-filter: blur(18px);
+            background: rgba(8, 14, 24, 0.7);
+            border: 1px solid rgba(94, 117, 151, 0.28);
+            border-radius: 18px;
+            padding: 18px 20px;
+            box-shadow: 0 25px 60px rgba(2, 6, 12, 0.4);
+        }
+
+        #scorePanel {
+            top: 24px;
+            left: 24px;
+            min-width: 180px;
+        }
+
+        #scorePanel .label {
+            font-size: 13px;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: rgba(148, 163, 184, 0.72);
+        }
+
+        #scoreValue {
+            margin-top: 6px;
+            font-size: 42px;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+
+        #scoreMeta {
+            margin-top: 8px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #94a3b8;
         }
 
         #leaderboard {
-            position: fixed;
-            top: 12px;
-            right: 14px;
-            color: #fff;
-            font: 600 16px/1 Inter, Arial;
-            text-align: right
+            top: 24px;
+            right: 24px;
+            width: 220px;
         }
 
-        #deathScreen {
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, .86);
-            color: #fff;
-            display: none;
-            align-items: center;
-            justify-content: center;
+        #leaderboard .title {
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: rgba(148, 163, 184, 0.76);
+            margin-bottom: 10px;
+        }
+
+        #leaderboardList {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
             flex-direction: column;
-            font: 700 24px/1 Inter, Arial;
-            z-index: 5
+            gap: 6px;
         }
 
-        #nicknameScreen {
+        #leaderboardList li {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 14px;
+            color: #cbd5f5;
+            background: rgba(12, 19, 31, 0.55);
+            padding: 6px 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(59, 76, 103, 0.4);
+        }
+
+        #leaderboardList li.me {
+            background: rgba(37, 99, 235, 0.3);
+            border-color: rgba(59, 130, 246, 0.45);
+            color: #e2e8f0;
+            box-shadow: 0 8px 18px rgba(37, 99, 235, 0.25);
+        }
+
+        #leaderboardList li .name {
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .overlay {
             position: fixed;
             inset: 0;
-            background: #0b0f16;
-            color: #fff;
             display: flex;
             align-items: center;
             justify-content: center;
-            flex-direction: column;
-            font: 600 18px/1 Inter, Arial;
-            z-index: 6
+            background: radial-gradient(circle at 50% 35%, rgba(26, 45, 74, 0.22), rgba(5, 8, 12, 0.9));
+            z-index: 10;
         }
 
-        #nicknameScreen input {
-            padding: 10px 12px;
-            font: 600 18px/1 Inter, Arial;
-            margin-bottom: 12px;
-            border-radius: 10px;
-            border: 1px solid #334155;
-            background: #0f172a;
+        .overlay.hidden {
+            display: none;
+        }
+
+        .card {
+            background: rgba(8, 14, 24, 0.8);
+            border-radius: 24px;
+            padding: 32px 36px 36px;
+            border: 1px solid rgba(59, 76, 103, 0.4);
+            box-shadow: 0 30px 80px rgba(3, 6, 12, 0.55);
+            text-align: center;
+            width: min(420px, 90vw);
+        }
+
+        .card h2 {
+            margin: 0 0 16px;
+            font-size: 26px;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+
+        .card p {
+            margin: 0 0 20px;
+            color: #94a3b8;
+            font-size: 15px;
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 14px;
+            border: 1px solid rgba(59, 76, 103, 0.5);
+            background: rgba(10, 18, 30, 0.9);
             color: #e2e8f0;
-            outline: none
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 18px;
+            outline: none;
+            transition: border-color 0.2s ease;
         }
 
-        #nicknameScreen button {
-            padding: 10px 16px;
-            font: 700 18px/1 Inter, Arial;
-            border-radius: 12px;
-            border: 0;
-            background: #22c55e;
-            color: #08141f;
-            cursor: pointer
+        input[type="text"]:focus {
+            border-color: rgba(94, 234, 212, 0.6);
+        }
+
+        button.primary {
+            width: 100%;
+            padding: 14px 16px;
+            border-radius: 16px;
+            border: none;
+            font-size: 17px;
+            font-weight: 700;
+            color: #020617;
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            cursor: pointer;
+            box-shadow: 0 12px 30px rgba(34, 197, 94, 0.35);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        button.primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 18px 38px rgba(34, 197, 94, 0.42);
+        }
+
+        .skin-picker {
+            margin-bottom: 22px;
+        }
+
+        .skin-picker .caption {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: rgba(148, 163, 184, 0.75);
+        }
+
+        .skin-picker .caption span:last-child {
+            color: #e2e8f0;
+            letter-spacing: 0;
+        }
+
+        .skin-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(60px, 1fr));
+            gap: 10px;
+        }
+
+        .skin-option {
+            position: relative;
+            border: 2px solid transparent;
+            border-radius: 999px;
+            height: 40px;
+            cursor: pointer;
+            box-shadow: inset 0 0 10px rgba(15, 23, 42, 0.4);
+            transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .skin-option::after {
+            content: attr(data-name);
+            position: absolute;
+            inset: 6px 12px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.25);
+            color: rgba(226, 232, 240, 0.8);
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .skin-option:hover::after {
+            opacity: 1;
+        }
+
+        .skin-option.selected {
+            border-color: rgba(255, 255, 255, 0.85);
+            transform: translateY(-2px);
+            box-shadow: 0 12px 24px rgba(148, 163, 184, 0.35);
+        }
+
+        #deathScreen .card {
+            width: min(360px, 90vw);
+        }
+
+        #deathScreen .summary {
+            font-size: 18px;
+            font-weight: 600;
+            color: #e2e8f0;
+            margin-bottom: 12px;
+        }
+
+        #deathScreen .score {
+            font-size: 32px;
+            font-weight: 700;
+            color: #f1f5f9;
+            margin-bottom: 24px;
+        }
+
+        #deathScreen button {
+            margin-top: 6px;
+        }
+
+        @media (max-width: 768px) {
+            #scorePanel,
+            #leaderboard {
+                top: auto;
+                bottom: 24px;
+            }
+
+            #leaderboard {
+                right: 24px;
+            }
+
+            #scorePanel {
+                left: 24px;
+            }
         }
     </style>
 </head>
-
 <body>
-<div id="nicknameScreen">
-    <h2 style="margin:0 0 12px 0">Введите никнейм</h2>
-    <input id="nicknameInput" placeholder="Ваш ник" />
-    <button id="startBtn">Играть</button>
-</div>
-<div id="score">Score: 0</div>
-<div id="leaderboard"></div>
-<div id="deathScreen"></div>
 <canvas id="canvas"></canvas>
-
+<div id="scorePanel" class="panel">
+    <div class="label">Длина</div>
+    <div id="scoreValue">0</div>
+    <div id="scoreMeta">Ранг: —</div>
+</div>
+<div id="leaderboard" class="panel">
+    <div class="title">Лидеры</div>
+    <ol id="leaderboardList"></ol>
+</div>
+<div id="nicknameScreen" class="overlay">
+    <div class="card">
+        <h2>Slither — онлайн арена</h2>
+        <p>Выберите никнейм и скин, чтобы начать игру. Управляйте мышкой, удерживайте кнопку, чтобы ускориться.</p>
+        <input id="nicknameInput" type="text" maxlength="16" placeholder="Ваш ник" autocomplete="off" />
+        <div class="skin-picker">
+            <div class="caption">
+                <span>Скины</span>
+                <span id="skinName">Rainbow</span>
+            </div>
+            <div id="skinList" class="skin-list"></div>
+        </div>
+        <button id="startBtn" class="primary">Играть</button>
+    </div>
+</div>
+<div id="deathScreen" class="overlay hidden">
+    <div class="card">
+        <div class="summary" id="deathSummary"></div>
+        <div class="score" id="deathScore"></div>
+        <button class="primary" id="retryBtn">Играть снова</button>
+    </div>
+</div>
 <script>
-    const DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1))
-    const canvas = document.getElementById("canvas")
-    const ctx = canvas.getContext("2d")
-    const scoreEl = document.getElementById("score")
-    const leaderboardEl = document.getElementById("leaderboard")
-    const deathScreen = document.getElementById("deathScreen")
-    const nicknameScreen = document.getElementById("nicknameScreen")
-    const nicknameInput = document.getElementById("nicknameInput")
-    const startBtn = document.getElementById("startBtn")
-
-    let ws, you = null, me = null, alive = false
-    let players = {}, foods = []
-    let lastSnapshotTs = 0
+(() => {
+    const DPR = Math.max(1, Math.min(2.5, window.devicePixelRatio || 1))
+    const canvas = document.getElementById('canvas')
+    const ctx = canvas.getContext('2d')
+    const scoreValueEl = document.getElementById('scoreValue')
+    const scoreMetaEl = document.getElementById('scoreMeta')
+    const leaderboardList = document.getElementById('leaderboardList')
+    const deathScreen = document.getElementById('deathScreen')
+    const deathSummary = document.getElementById('deathSummary')
+    const deathScore = document.getElementById('deathScore')
+    const retryBtn = document.getElementById('retryBtn')
+    const nicknameScreen = document.getElementById('nicknameScreen')
+    const nicknameInput = document.getElementById('nicknameInput')
+    const skinList = document.getElementById('skinList')
+    const skinName = document.getElementById('skinName')
+    const startBtn = document.getElementById('startBtn')
 
     const SKINS = {
-        rainbow: ["#ff004d", "#ff7a00", "#ffd400", "#2bff00", "#00d5ff", "#6a00ff", "#ff00e5"],
-        ocean: ["#7ef3ff", "#45a9ff", "#0c5bd6"],
-        lime: ["#ccffd7", "#62f2a0", "#1fb86a"],
-        fire: ["#fff1a6", "#ffb84c", "#ff5a36", "#d81e1e"],
-        candy: ["#ffe3f1", "#ff9fd2", "#ff58b4", "#c53df0"],
-        flag_ru: ["#ffffff", "#0052b4", "#d80027"],
-        flag_kz: ["#00aed6", "#ffd34f", "#00aed6", "#ffd34f"],
-        default: ["#cbd5e1", "#94a3b8", "#64748b"]
+        rainbow: ['#ff004d', '#ff7a00', '#ffd400', '#2bff00', '#00d5ff', '#6a00ff', '#ff00e5'],
+        ocean: ['#7ef3ff', '#45a9ff', '#0c5bd6'],
+        lime: ['#ccffd7', '#62f2a0', '#1fb86a'],
+        fire: ['#fff1a6', '#ffb84c', '#ff5a36', '#d81e1e'],
+        candy: ['#ffe3f1', '#ff9fd2', '#ff58b4', '#c53df0'],
+        flag_ru: ['#ffffff', '#0052b4', '#d80027'],
+        flag_kz: ['#00aed6', '#ffd34f', '#00aed6', '#ffd34f'],
+        default: ['#cbd5e1', '#94a3b8', '#64748b']
+    }
+
+    const SKIN_LABELS = {
+        rainbow: 'Rainbow',
+        ocean: 'Ocean',
+        lime: 'Lime',
+        fire: 'Fire',
+        candy: 'Candy',
+        flag_ru: 'Russia',
+        flag_kz: 'Kazakhstan',
+        default: 'Classic'
     }
 
     function setCanvasSize() {
-        const w = window.innerWidth, h = window.innerHeight
-        canvas.width = Math.floor(w * DPR)
-        canvas.height = Math.floor(h * DPR)
-        canvas.style.width = w + "px"
-        canvas.style.height = h + "px"
+        const width = window.innerWidth
+        const height = window.innerHeight
+        canvas.width = Math.round(width * DPR)
+        canvas.height = Math.round(height * DPR)
+        canvas.style.width = width + 'px'
+        canvas.style.height = height + 'px'
         ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
     }
-    setCanvasSize()
-    window.addEventListener("resize", setCanvasSize)
 
-    let hexPattern = null
+    setCanvasSize()
+    window.addEventListener('resize', () => {
+        setCanvasSize()
+        hexPattern = buildHexPattern()
+    })
+
+    let selectedSkin = 'rainbow'
+
+    function gradientForSkin(colors) {
+        if (!colors || colors.length === 0) return '#94a3b8'
+        if (colors.length === 1) return colors[0]
+        const stops = colors.map((color, idx) => `${color} ${(idx / (colors.length - 1)) * 100}%`).join(', ')
+        return `linear-gradient(135deg, ${stops})`
+    }
+
+    function buildSkinPicker() {
+        skinList.innerHTML = ''
+        Object.entries(SKINS).forEach(([key, colors]) => {
+            const btn = document.createElement('button')
+            btn.type = 'button'
+            btn.className = 'skin-option'
+            btn.dataset.skin = key
+            btn.dataset.name = SKIN_LABELS[key] || key
+            btn.style.background = gradientForSkin(colors)
+            btn.addEventListener('click', () => {
+                selectedSkin = key
+                updateSkinPicker()
+            })
+            skinList.appendChild(btn)
+        })
+        updateSkinPicker()
+    }
+
+    function updateSkinPicker() {
+        skinName.textContent = SKIN_LABELS[selectedSkin] || selectedSkin
+        Array.from(skinList.children).forEach((child) => {
+            child.classList.toggle('selected', child.dataset.skin === selectedSkin)
+        })
+    }
+
+    buildSkinPicker()
+    renderLeaderboard()
+    updateHUD(0)
+
+    let ws = null
+    const state = {
+        snakes: new Map(),
+        foods: new Map(),
+        leaderboard: [],
+        meId: null,
+        meName: '',
+        alive: false,
+        camera: { x: 0, y: 0, targetX: 0, targetY: 0 },
+        pointerAngle: null,
+        pointerBoost: false,
+        lastInputSent: 0,
+        lastSnapshotAt: 0
+    }
+
+    const FOOD_PULSE_SPEED = 4.2
+    const CAMERA_SMOOTH = 6.5
+    const POSITION_SMOOTH = 12
+    const ANGLE_SMOOTH = 10
+
+    let hexPattern = buildHexPattern()
+
     function buildHexPattern() {
-        const s = 84
-        const off = document.createElement("canvas")
-        off.width = s; off.height = s
-        const c = off.getContext("2d")
-        c.fillStyle = "#0b0f16"
-        c.fillRect(0, 0, s, s)
-        c.strokeStyle = "rgba(255,255,255,.04)"
-        c.lineWidth = 1
+        const size = 140
+        const off = document.createElement('canvas')
+        off.width = size
+        off.height = size
+        const c = off.getContext('2d')
+        c.fillStyle = '#05070d'
+        c.fillRect(0, 0, size, size)
+        const center = size / 2
+        const radius = size * 0.42
+        c.lineWidth = 2
+        c.strokeStyle = 'rgba(100, 116, 139, 0.08)'
         c.beginPath()
         for (let i = 0; i < 6; i++) {
-            const a = Math.PI / 3 * i
-            const x = s / 2 + 28 * Math.cos(a)
-            const y = s / 2 + 28 * Math.sin(a)
-            if (i === 0) c.moveTo(x, y); else c.lineTo(x, y)
+            const angle = Math.PI / 3 * i
+            const x = center + radius * Math.cos(angle)
+            const y = center + radius * Math.sin(angle)
+            if (i === 0) c.moveTo(x, y)
+            else c.lineTo(x, y)
         }
         c.closePath()
         c.stroke()
-        hexPattern = ctx.createPattern(off, "repeat")
+        c.strokeStyle = 'rgba(94, 234, 212, 0.04)'
+        c.lineWidth = 1.2
+        const innerRadius = radius * 0.58
+        c.beginPath()
+        for (let i = 0; i < 6; i++) {
+            const angle = Math.PI / 3 * i + Math.PI / 6
+            const x = center + innerRadius * Math.cos(angle)
+            const y = center + innerRadius * Math.sin(angle)
+            if (i === 0) c.moveTo(x, y)
+            else c.lineTo(x, y)
+        }
+        c.closePath()
+        c.stroke()
+        return ctx.createPattern(off, 'repeat')
     }
-    buildHexPattern()
 
-    function connect(name) {
-        ws = new WebSocket("ws://localhost:8080")
-        ws.onopen = () => ws.send(JSON.stringify({ type: "join", name, skin: "rainbow" }))
-        ws.onmessage = e => {
-            const m = JSON.parse(e.data)
-            if (m.type === "welcome") { you = m.id; alive = true }
-            if (m.type === "snapshot") {
-                lastSnapshotTs = performance.now()
-                players = {}; m.players.forEach(p => players[p.id] = p)
-                foods = m.foods || []
-                me = m.you || null
+    function connect(name, skin) {
+        const origin = (typeof location !== 'undefined' && location.origin && location.origin !== 'null')
+            ? location.origin.replace(/^http/, 'ws')
+            : 'ws://localhost:8080'
+        ws = new WebSocket(origin)
+        ws.onopen = () => {
+            ws.send(JSON.stringify({ type: 'join', name, skin }))
+        }
+        ws.onclose = () => {
+            state.alive = false
+        }
+        ws.onmessage = (event) => {
+            const message = safeParse(event.data)
+            if (!message) return
+            if (message.type === 'welcome') {
+                state.meId = message.id
+                state.alive = true
             }
-            if (m.type === "death") {
-                if (m.food && m.food.length) foods.push(...m.food.map(f => ({ ...f, big: true })))
-                if (players[m.id]) delete players[m.id]
-                if (m.id === you) { alive = false; showDeath(m.killerName || "", m.yourScore || 0) }
+            if (message.type === 'snapshot') {
+                state.lastSnapshotAt = performance.now()
+                state.alive = message.you ? message.you.alive : state.alive
+                if (message.leaderboard) {
+                    state.leaderboard = message.leaderboard
+                    renderLeaderboard()
+                }
+                applySnapshot(message)
+                if (message.you && typeof message.you.length === 'number') {
+                    updateHUD(Math.floor(message.you.length))
+                }
+            }
+            if (message.type === 'death') {
+                showDeath(message)
             }
         }
-        ws.onclose = () => alive = false
     }
 
-    function sendInput(angle, boost) {
-        if (ws && ws.readyState === 1 && alive) ws.send(JSON.stringify({ type: "input", angle, boost }))
+    function safeParse(data) {
+        try {
+            return JSON.parse(data)
+        } catch (err) {
+            return null
+        }
     }
 
-    document.addEventListener("mousemove", e => {
-        if (!me || !alive) return
-        const r = canvas.getBoundingClientRect()
-        const cx = r.width / 2, cy = r.height / 2
-        const angle = Math.atan2(e.clientY - cy, e.clientX - cx)
-        sendInput(angle, false)
-    })
-    document.addEventListener("mousedown", () => sendInput(null, true))
-    document.addEventListener("mouseup", () => sendInput(null, false))
+    function applySnapshot(snapshot) {
+        const seen = new Set()
+        if (Array.isArray(snapshot.players)) {
+            snapshot.players.forEach((payload) => {
+                if (!payload || !payload.id) return
+                seen.add(payload.id)
+                upsertSnake(payload)
+            })
+        }
+        if (snapshot.you && snapshot.you.id) {
+            seen.add(snapshot.you.id)
+        }
+        for (const [id] of state.snakes) {
+            if (!seen.has(id)) {
+                state.snakes.delete(id)
+            }
+        }
 
-    function drawBackground(camX, camY) {
-        ctx.save()
-        ctx.fillStyle = "#0b0f16"
-        ctx.fillRect(0, 0, canvas.width / DPR, canvas.height / DPR)
-        ctx.translate(-(camX % 84) + canvas.width / DPR / 2, -(camY % 84) + canvas.height / DPR / 2)
-        ctx.fillStyle = hexPattern
-        ctx.fillRect(-100, -100, canvas.width / DPR + 200, canvas.height / DPR + 200)
-        ctx.restore()
-    }
-
-    function glowDot(x, y, r, base) {
-        const g = ctx.createRadialGradient(x, y, 1, x, y, r + 10)
-        g.addColorStop(0, "#fff")
-        g.addColorStop(.35, base)
-        g.addColorStop(1, "rgba(0,0,0,0)")
-        ctx.fillStyle = g
-        ctx.beginPath(); ctx.arc(x, y, r + 10, 0, Math.PI * 2); ctx.fill()
-        const g2 = ctx.createRadialGradient(x, y, 1, x, y, r)
-        g2.addColorStop(0, "#fff")
-        g2.addColorStop(.2, "#fff")
-        g2.addColorStop(1, base)
-        ctx.fillStyle = g2
-        ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill()
-    }
-
-    function drawFoods(camX, camY) {
-        const cx = canvas.width / DPR / 2, cy = canvas.height / DPR / 2
-        for (const f of foods) {
-            const sx = cx + (f.x - camX), sy = cy + (f.y - camY)
-            const base = f.color || randomFoodColor(f.seed || 0)
-            const r = Math.max(3, Math.min(10, (f.size || 4))) * (f.big ? 1.6 : 1)
-            glowDot(sx, sy, r, base)
+        const foodSeen = new Set()
+        if (Array.isArray(snapshot.foods)) {
+            snapshot.foods.forEach((f) => {
+                if (!f || !f.id) return
+                foodSeen.add(f.id)
+                let food = state.foods.get(f.id)
+                if (!food) {
+                    food = {
+                        id: f.id,
+                        displayX: f.x,
+                        displayY: f.y,
+                        life: 0
+                    }
+                    state.foods.set(f.id, food)
+                }
+                food.targetX = f.x
+                food.targetY = f.y
+                food.value = typeof f.v === 'number' ? f.v : 1
+                if (f.color && /^#/.test(f.color)) {
+                    food.color = f.color
+                } else if (!food.color) {
+                    food.color = randomFoodColor(f.id)
+                }
+                food.big = Boolean(f.big)
+                if (typeof f.pulse === 'number') food.pulse = f.pulse
+                else if (typeof food.pulse !== 'number') food.pulse = Math.random() * Math.PI * 2
+            })
+        }
+        for (const [id] of state.foods) {
+            if (!foodSeen.has(id)) state.foods.delete(id)
         }
     }
 
     function randomFoodColor(seed) {
-        const palette = ["#ffd166", "#fca311", "#ff5e57", "#4cd137", "#00e5ff", "#7d5fff", "#ff8bd2", "#b7fbff", "#caffbf", "#fdffb6", "#ffd6a5", "#bdb2ff"]
-        return palette[Math.abs(seed) % palette.length]
+        const palette = ['#ffd166', '#fca311', '#ff5e57', '#4cd137', '#00e5ff', '#7d5fff', '#ff8bd2', '#b7fbff', '#caffbf', '#fdffb6', '#ffd6a5', '#bdb2ff']
+        const text = typeof seed === 'string' ? seed : String(seed)
+        let acc = 0
+        for (let i = 0; i < text.length; i++) acc = (acc + text.charCodeAt(i)) % palette.length
+        return palette[acc]
     }
 
-    function lerp(a, b, t) { return a + (b - a) * t }
+    function upsertSnake(payload) {
+        const id = payload.id
+        let snake = state.snakes.get(id)
+        if (!snake) {
+            snake = {
+                id,
+                displayX: payload.x,
+                displayY: payload.y,
+                targetX: payload.x,
+                targetY: payload.y,
+                displayAngle: payload.angle || 0,
+                targetAngle: payload.angle || 0,
+                displayDir: payload.dir || payload.angle || 0,
+                targetDir: payload.dir || payload.angle || 0,
+                renderPath: [],
+                length: payload.length || 0,
+                displayLength: payload.length || 0,
+                speed: payload.speed || 0,
+                alive: payload.alive,
+                name: payload.name || '',
+                skin: payload.skin || 'default'
+            }
+            state.snakes.set(id, snake)
+        }
+        snake.targetX = payload.x
+        snake.targetY = payload.y
+        snake.targetAngle = payload.angle || snake.targetAngle
+        snake.targetDir = payload.dir || snake.targetAngle
+        snake.length = payload.length || snake.length
+        snake.speed = payload.speed || snake.speed
+        snake.alive = payload.alive
+        snake.name = payload.name || ''
+        snake.skin = payload.skin || 'default'
+        if (typeof snake.displayLength !== 'number') snake.displayLength = snake.length
+        const rawPath = Array.isArray(payload.path) ? payload.path : []
+        const rebuiltPath = rebuildPath(rawPath, payload.x, payload.y, snake.length, snake.targetDir)
+        smoothAssignPath(snake, rebuiltPath)
+    }
 
-    function drawSnake(p, camX, camY) {
-        const colors = SKINS[p.skin] || SKINS.default
-        const cx = canvas.width / DPR / 2, cy = canvas.height / DPR / 2
-        const bodyR = Math.max(7, Math.min(14, 6 + Math.log(1 + (p.length || 30)) / Math.log(1.3)))
-        const headR = bodyR + 2
+    function rebuildPath(points, headX, headY, length, angle) {
+        const result = []
+        const tail = points.slice(-Math.min(points.length, 400))
+        for (let i = 0; i < tail.length; i++) {
+            const pt = tail[i]
+            if (typeof pt.x === 'number' && typeof pt.y === 'number') {
+                result.push({ x: pt.x, y: pt.y })
+            }
+        }
+        if (!result.length || result[result.length - 1].x !== headX || result[result.length - 1].y !== headY) {
+            result.push({ x: headX, y: headY })
+        }
+        if (result.length < 2) {
+            const dir = typeof angle === 'number' ? angle : 0
+            const backOffset = Math.max(24, Math.min(120, 12 + Math.sqrt(Math.max(length, 1)) * 14))
+            result.unshift({
+                x: headX - Math.cos(dir) * backOffset,
+                y: headY - Math.sin(dir) * backOffset
+            })
+        }
+        const spacing = Math.max(5, Math.min(12, 5.5 + Math.pow(Math.max(length, 1), 0.35)))
+        return resamplePath(result, spacing)
+    }
 
-        if (p.path && p.path.length) {
-            for (let i = p.path.length - 1; i >= 0; i--) {
-                const seg = p.path[i]
-                const sx = cx + (seg.x - camX), sy = cy + (seg.y - camY)
-                const col = colors[i % colors.length]
-                const g = ctx.createRadialGradient(sx, sy, 2, sx, sy, bodyR + 3)
-                g.addColorStop(0, "#ffffff")
-                g.addColorStop(.25, col)
-                g.addColorStop(1, shade(col, .35))
-                ctx.fillStyle = g
-                ctx.beginPath(); ctx.arc(sx, sy, bodyR, 0, Math.PI * 2); ctx.fill()
+    function smoothAssignPath(snake, targetPath) {
+        if (!targetPath || !targetPath.length) {
+            snake.renderPath = []
+            return
+        }
+        if (!snake.renderPath || !snake.renderPath.length) {
+            snake.renderPath = targetPath.map((p) => ({ x: p.x, y: p.y }))
+            return
+        }
+        const blend = 0.45
+        const limit = Math.min(snake.renderPath.length, targetPath.length)
+        const merged = []
+        for (let i = 0; i < limit; i++) {
+            const a = snake.renderPath[i]
+            const b = targetPath[i]
+            merged.push({
+                x: lerp(a.x, b.x, blend),
+                y: lerp(a.y, b.y, blend)
+            })
+        }
+        for (let i = limit; i < targetPath.length; i++) {
+            merged.push({ x: targetPath[i].x, y: targetPath[i].y })
+        }
+        snake.renderPath = merged
+    }
+
+    function resamplePath(points, spacing) {
+        if (!points || points.length < 2) return points || []
+        const output = [{ x: points[0].x, y: points[0].y }]
+        let prev = points[0]
+        let carry = 0
+        for (let i = 1; i < points.length; i++) {
+            const current = points[i]
+            let dx = current.x - prev.x
+            let dy = current.y - prev.y
+            let segLength = Math.hypot(dx, dy)
+            if (segLength === 0) continue
+            while (carry + segLength >= spacing) {
+                const remain = spacing - carry
+                const t = remain / segLength
+                const nx = prev.x + dx * t
+                const ny = prev.y + dy * t
+                output.push({ x: nx, y: ny })
+                prev = { x: nx, y: ny }
+                dx = current.x - prev.x
+                dy = current.y - prev.y
+                segLength = Math.hypot(dx, dy)
+                carry = 0
+            }
+            carry += segLength
+            prev = current
+        }
+        const last = points[points.length - 1]
+        if (output.length === 0 || output[output.length - 1].x !== last.x || output[output.length - 1].y !== last.y) {
+            output.push({ x: last.x, y: last.y })
+        }
+        return output
+    }
+
+    function updateHUD(score) {
+        scoreValueEl.textContent = (score || 0).toLocaleString('ru-RU')
+        const rank = getRank()
+        const meSnake = state.meId ? state.snakes.get(state.meId) : null
+        const speed = meSnake && meSnake.speed ? Math.max(0, Math.round(meSnake.speed)) : null
+        scoreMetaEl.textContent = speed ? `Ранг: ${rank} · Скорость: ${speed}` : `Ранг: ${rank}`
+    }
+
+    function getRank() {
+        if (!state.leaderboard || !state.leaderboard.length || !state.meName) return '—'
+        const index = state.leaderboard.findIndex((entry) => entry && entry.name === state.meName)
+        if (index === -1) return state.leaderboard.length >= 10 ? '10+' : '—'
+        return index + 1
+    }
+
+    function renderLeaderboard() {
+        leaderboardList.innerHTML = ''
+        state.leaderboard.slice(0, 10).forEach((entry, idx) => {
+            const li = document.createElement('li')
+            if (entry && entry.name === state.meName) {
+                li.classList.add('me')
+            }
+            const nameSpan = document.createElement('span')
+            nameSpan.className = 'name'
+            nameSpan.textContent = `${idx + 1}. ${entry?.name || 'Anon'}`
+            const scoreSpan = document.createElement('span')
+            const value = entry && typeof entry.length === 'number' ? entry.length : 0
+            scoreSpan.textContent = value.toLocaleString('ru-RU')
+            li.appendChild(nameSpan)
+            li.appendChild(scoreSpan)
+            leaderboardList.appendChild(li)
+        })
+    }
+
+    function showDeath(message) {
+        state.alive = false
+        const killerName = message && message.killerName ? message.killerName : 'неизвестный'
+        const score = message && typeof message.yourScore === 'number' ? message.yourScore : 0
+        deathSummary.textContent = `Вас победил ${killerName}`
+        deathScore.textContent = `Счёт: ${score.toLocaleString('ru-RU')}`
+        deathScreen.classList.remove('hidden')
+        updateHUD(0)
+    }
+
+    retryBtn.addEventListener('click', () => window.location.reload())
+
+    function lerp(a, b, t) {
+        return a + (b - a) * t
+    }
+
+    function lerpAngle(a, b, t) {
+        let diff = b - a
+        while (diff < -Math.PI) diff += Math.PI * 2
+        while (diff > Math.PI) diff -= Math.PI * 2
+        return a + diff * t
+    }
+
+    function withAlpha(hex, alpha) {
+        const value = parseInt(hex.slice(1), 16)
+        const r = (value >> 16) & 255
+        const g = (value >> 8) & 255
+        const b = value & 255
+        return `rgba(${r},${g},${b},${alpha})`
+    }
+
+    function shadeColor(hex, amt) {
+        const value = parseInt(hex.slice(1), 16)
+        let r = (value >> 16) & 255
+        let g = (value >> 8) & 255
+        let b = value & 255
+        if (amt >= 0) {
+            r = Math.round(r + (255 - r) * amt)
+            g = Math.round(g + (255 - g) * amt)
+            b = Math.round(b + (255 - b) * amt)
+        } else {
+            const t = -amt
+            r = Math.round(r * (1 - t))
+            g = Math.round(g * (1 - t))
+            b = Math.round(b * (1 - t))
+        }
+        return '#' + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)
+    }
+
+    function update(dt) {
+        const smoothPos = Math.min(1, dt * POSITION_SMOOTH)
+        const smoothAngle = Math.min(1, dt * ANGLE_SMOOTH)
+        for (const snake of state.snakes.values()) {
+            snake.displayX = lerp(snake.displayX, snake.targetX, smoothPos)
+            snake.displayY = lerp(snake.displayY, snake.targetY, smoothPos)
+            snake.displayAngle = lerpAngle(snake.displayAngle, snake.targetAngle, smoothAngle)
+            snake.displayDir = lerpAngle(snake.displayDir, snake.targetDir, smoothAngle)
+            snake.displayLength = lerp(snake.displayLength || snake.length, snake.length, Math.min(1, dt * 6))
+            if (!snake.alive && snake.renderPath.length) {
+                snake.renderPath = snake.renderPath.slice(-1)
             }
         }
 
-        const hx = cx + (p.x - camX), hy = cy + (p.y - camY)
-        const hg = ctx.createRadialGradient(hx, hy, 2, hx, hy, headR + 4)
-        hg.addColorStop(0, "#ffffff")
-        hg.addColorStop(.25, colors[0])
-        hg.addColorStop(1, shade(colors[0], .3))
-        ctx.fillStyle = hg
-        ctx.beginPath(); ctx.arc(hx, hy, headR, 0, Math.PI * 2); ctx.fill()
+        const camTarget = state.meId && state.snakes.get(state.meId)
+        if (camTarget) {
+            state.camera.targetX = camTarget.displayX
+            state.camera.targetY = camTarget.displayY
+        }
+        const camK = Math.min(1, dt * CAMERA_SMOOTH)
+        state.camera.x = lerp(state.camera.x, state.camera.targetX, camK)
+        state.camera.y = lerp(state.camera.y, state.camera.targetY, camK)
 
-        const eyeR = headR * 0.32, pupilR = headR * 0.16
-        const ang = p.dir || 0
-        const ex1 = hx + Math.cos(ang) * headR * 0.35 - Math.sin(ang) * headR * 0.25
-        const ey1 = hy + Math.sin(ang) * headR * 0.35 + Math.cos(ang) * headR * 0.25
-        const ex2 = hx + Math.cos(ang) * headR * 0.35 + Math.sin(ang) * headR * 0.25
-        const ey2 = hy + Math.sin(ang) * headR * 0.35 - Math.cos(ang) * headR * 0.25
-
-        ctx.fillStyle = "#fff"; ctx.beginPath(); ctx.arc(ex1, ey1, eyeR, 0, Math.PI * 2); ctx.fill()
-        ctx.beginPath(); ctx.arc(ex2, ey2, eyeR, 0, Math.PI * 2); ctx.fill()
-        const pxOff = headR * 0.12
-        ctx.fillStyle = "#111"; ctx.beginPath(); ctx.arc(ex1 + Math.cos(ang) * pxOff, ey1 + Math.sin(ang) * pxOff, pupilR, 0, Math.PI * 2); ctx.fill()
-        ctx.beginPath(); ctx.arc(ex2 + Math.cos(ang) * pxOff, ey2 + Math.sin(ang) * pxOff, pupilR, 0, Math.PI * 2); ctx.fill()
-
-        ctx.fillStyle = "#e2e8f0"
-        ctx.font = "12px Inter,Arial"
-        ctx.fillText(p.name || "", hx - ctx.measureText(p.name || "").width / 2, hy - headR - 10)
+        for (const food of state.foods.values()) {
+            food.displayX = lerp(food.displayX, food.targetX, smoothPos)
+            food.displayY = lerp(food.displayY, food.targetY, smoothPos)
+            food.life = Math.min(1, (food.life || 0) + dt * 3.2)
+        }
     }
 
-    function shade(hex, amt) {
-        const c = parseInt(hex.slice(1), 16)
-        let r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255
-        r = Math.max(0, Math.min(255, Math.round(lerp(r, 0, amt))))
-        g = Math.max(0, Math.min(255, Math.round(lerp(g, 0, amt))))
-        b = Math.max(0, Math.min(255, Math.round(lerp(b, 0, amt))))
-        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)
+    function draw(time) {
+        const width = canvas.width / DPR
+        const height = canvas.height / DPR
+        drawBackground(state.camera.x, state.camera.y, width, height)
+        drawFoods(state.camera.x, state.camera.y, time)
+        drawSnakes(state.camera.x, state.camera.y)
     }
 
-    function renderHUD() {
-        scoreEl.textContent = "Score: " + (me ? Math.floor(me.length || 0) : 0)
+    function drawBackground(camX, camY, width, height) {
+        ctx.save()
+        ctx.fillStyle = '#05070d'
+        ctx.fillRect(0, 0, width, height)
+        ctx.translate(width / 2 - camX, height / 2 - camY)
+        ctx.globalAlpha = 0.9
+        const pad = Math.max(width, height) * 1.6
+        ctx.fillStyle = hexPattern
+        ctx.fillRect(camX - pad, camY - pad, pad * 2, pad * 2)
+        ctx.restore()
+
+        const vignette = ctx.createRadialGradient(width / 2, height / 2, Math.min(width, height) * 0.2, width / 2, height / 2, Math.max(width, height) * 0.75)
+        vignette.addColorStop(0, 'rgba(5, 9, 16, 0)')
+        vignette.addColorStop(1, 'rgba(0, 0, 0, 0.65)')
+        ctx.fillStyle = vignette
+        ctx.fillRect(0, 0, width, height)
     }
 
-    function loop() {
+    function drawFoods(camX, camY, time) {
+        ctx.save()
+        ctx.translate(canvas.width / DPR / 2 - camX, canvas.height / DPR / 2 - camY)
+        ctx.globalCompositeOperation = 'lighter'
+        for (const food of state.foods.values()) {
+            const color = food.color || '#ffd166'
+            const pulse = 1 + Math.sin(time * FOOD_PULSE_SPEED + (food.pulse || 0)) * 0.16
+            const radius = (3.2 + Math.pow(food.value || 1, 0.55) * (food.big ? 1.45 : 1)) * pulse
+            ctx.globalAlpha = (food.big ? 0.95 : 0.85) * (food.life || 1)
+            ctx.shadowBlur = food.big ? 28 : 16
+            ctx.shadowColor = withAlpha(color, food.big ? 0.7 : 0.45)
+            const gradient = ctx.createRadialGradient(food.displayX, food.displayY, radius * 0.2, food.displayX, food.displayY, radius)
+            gradient.addColorStop(0, '#ffffff')
+            gradient.addColorStop(0.25, shadeColor(color, 0.2))
+            gradient.addColorStop(1, shadeColor(color, -0.4))
+            ctx.fillStyle = gradient
+            ctx.beginPath()
+            ctx.arc(food.displayX, food.displayY, radius, 0, Math.PI * 2)
+            ctx.fill()
+        }
+        ctx.restore()
+        ctx.globalAlpha = 1
+        ctx.shadowBlur = 0
+        ctx.globalCompositeOperation = 'source-over'
+    }
+
+    function drawSnakes(camX, camY) {
+        const snakes = Array.from(state.snakes.values()).filter((s) => s.alive)
+        snakes.sort((a, b) => (a.displayLength || 0) - (b.displayLength || 0))
+        ctx.save()
+        ctx.translate(canvas.width / DPR / 2 - camX, canvas.height / DPR / 2 - camY)
+        for (const snake of snakes) {
+            const path = snake.renderPath
+            if (!path || path.length < 2) continue
+            const colors = SKINS[snake.skin] || SKINS.default
+            const bodyRadius = Math.max(6, Math.min(26, 4.6 + Math.pow(Math.max(snake.displayLength || snake.length || 20, 1), 0.4)))
+            const headRadius = bodyRadius * 1.18
+            const head = { x: snake.displayX, y: snake.displayY }
+            const tail = path[0]
+            const gradient = ctx.createLinearGradient(tail.x, tail.y, head.x, head.y)
+            if (colors.length === 1) {
+                gradient.addColorStop(0, colors[0])
+                gradient.addColorStop(1, colors[0])
+            } else {
+                const denom = colors.length - 1
+                colors.forEach((color, idx) => {
+                    gradient.addColorStop(idx / denom, color)
+                })
+            }
+
+            ctx.lineJoin = 'round'
+            ctx.lineCap = 'round'
+            ctx.strokeStyle = 'rgba(8, 13, 24, 0.7)'
+            ctx.lineWidth = bodyRadius * 2 + 6
+            strokePath(path)
+
+            ctx.strokeStyle = gradient
+            ctx.lineWidth = bodyRadius * 2
+            ctx.shadowColor = withAlpha(colors[0], 0.42)
+            ctx.shadowBlur = bodyRadius * 0.8
+            strokePath(path)
+
+            ctx.shadowBlur = 0
+            const highlight = path.slice(Math.max(0, path.length - 18))
+            if (highlight.length >= 2) {
+                ctx.globalAlpha = 0.55
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.18)'
+                ctx.lineWidth = bodyRadius * 0.6
+                strokePath(highlight)
+                ctx.globalAlpha = 1
+            }
+
+            const headGradient = ctx.createRadialGradient(head.x, head.y, headRadius * 0.2, head.x, head.y, headRadius * 1.4)
+            headGradient.addColorStop(0, '#ffffff')
+            headGradient.addColorStop(0.22, colors[0])
+            headGradient.addColorStop(1, shadeColor(colors[0], -0.4))
+            ctx.fillStyle = headGradient
+            ctx.beginPath()
+            ctx.arc(head.x, head.y, headRadius, 0, Math.PI * 2)
+            ctx.fill()
+
+            const dir = snake.displayDir || 0
+            const eyeOffset = headRadius * 0.58
+            const sideOffset = headRadius * 0.32
+            const pupilOffset = headRadius * 0.18
+            const eyeRadius = headRadius * 0.28
+            const pupilRadius = headRadius * 0.16
+            const ex1 = head.x + Math.cos(dir) * eyeOffset - Math.sin(dir) * sideOffset
+            const ey1 = head.y + Math.sin(dir) * eyeOffset + Math.cos(dir) * sideOffset
+            const ex2 = head.x + Math.cos(dir) * eyeOffset + Math.sin(dir) * sideOffset
+            const ey2 = head.y + Math.sin(dir) * eyeOffset - Math.cos(dir) * sideOffset
+            ctx.fillStyle = '#f8fafc'
+            ctx.beginPath(); ctx.arc(ex1, ey1, eyeRadius, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.arc(ex2, ey2, eyeRadius, 0, Math.PI * 2); ctx.fill()
+            ctx.fillStyle = '#0f172a'
+            ctx.beginPath(); ctx.arc(ex1 + Math.cos(dir) * pupilOffset, ey1 + Math.sin(dir) * pupilOffset, pupilRadius, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.arc(ex2 + Math.cos(dir) * pupilOffset, ey2 + Math.sin(dir) * pupilOffset, pupilRadius, 0, Math.PI * 2); ctx.fill()
+
+            if (snake.name) {
+                ctx.fillStyle = 'rgba(226, 232, 240, 0.9)'
+                ctx.font = '600 13px "Inter", sans-serif'
+                ctx.textAlign = 'center'
+                ctx.textBaseline = 'bottom'
+                ctx.fillText(snake.name, head.x, head.y - headRadius - 10)
+            }
+        }
+        ctx.shadowBlur = 0
+        ctx.shadowColor = 'transparent'
+        ctx.restore()
+    }
+
+    function strokePath(points) {
+        if (!points || points.length < 2) return
+        ctx.beginPath()
+        ctx.moveTo(points[0].x, points[0].y)
+        for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i].x, points[i].y)
+        }
+        ctx.stroke()
+    }
+
+    let lastTime = performance.now()
+    function loop(now) {
+        const dt = Math.min(0.05, (now - lastTime) / 1000)
+        lastTime = now
+        update(dt)
+        draw(now / 1000)
         requestAnimationFrame(loop)
-        if (!me) return
-        const camX = me.x, camY = me.y
-        drawBackground(camX, camY)
-        drawFoods(camX, camY)
-        const arr = Object.values(players)
-        for (let i = 0; i < arr.length; i++) drawSnake(arr[i], camX, camY)
-        renderHUD()
     }
-    loop()
+    requestAnimationFrame(loop)
 
-    function renderLeaderboard(board) {
-        if (!board) return
-        leaderboardEl.innerHTML = "<b>Leaderboard</b><br>" + board.map((p, i) => `${i + 1}. ${p.name} — ${p.length}`).join("<br>")
+    function sendInput() {
+        if (!ws || ws.readyState !== WebSocket.OPEN || !state.alive) return
+        const payload = { type: 'input', boost: state.pointerBoost }
+        if (typeof state.pointerAngle === 'number' && !Number.isNaN(state.pointerAngle)) {
+            payload.angle = state.pointerAngle
+        }
+        ws.send(JSON.stringify(payload))
     }
 
-    function showDeath(killer, score) {
-        deathScreen.style.display = "flex"
-        deathScreen.innerHTML = `
-        <div style="margin-bottom:8px">Вас убил <b>${killer || "?"}</b></div>
-        <div style="margin-bottom:14px">Ваш счёт: ${score || 0}</div>
-        <button onclick="location.reload()" style="padding:10px 16px;border:0;border-radius:12px;background:#22c55e;color:#08141f;font:700 18px/1 Inter,Arial;cursor:pointer">Играть снова</button>
-    `
+    setInterval(sendInput, 30)
+
+    document.addEventListener('mousemove', (event) => {
+        const rect = canvas.getBoundingClientRect()
+        const cx = rect.left + rect.width / 2
+        const cy = rect.top + rect.height / 2
+        state.pointerAngle = Math.atan2(event.clientY - cy, event.clientX - cx)
+    })
+
+    document.addEventListener('mousedown', () => {
+        state.pointerBoost = true
+    })
+
+    document.addEventListener('mouseup', () => {
+        state.pointerBoost = false
+    })
+
+    canvas.addEventListener('touchmove', (event) => {
+        if (!event.touches || !event.touches.length) return
+        const touch = event.touches[0]
+        const rect = canvas.getBoundingClientRect()
+        const cx = rect.left + rect.width / 2
+        const cy = rect.top + rect.height / 2
+        state.pointerAngle = Math.atan2(touch.clientY - cy, touch.clientX - cx)
+        state.pointerBoost = event.touches.length > 1
+        event.preventDefault()
+    }, { passive: false })
+
+    canvas.addEventListener('touchend', (event) => {
+        if (!event.touches || event.touches.length === 0) {
+            state.pointerBoost = false
+        }
+    })
+
+    function startGame() {
+        const name = nicknameInput.value.trim() || 'Anon'
+        state.meName = name
+        nicknameScreen.classList.add('hidden')
+        connect(name, selectedSkin)
     }
 
-    startBtn.onclick = () => {
-        const name = nicknameInput.value.trim() || "Anon"
-        nicknameScreen.style.display = "none"
-        connect(name)
-    }
+    startBtn.addEventListener('click', startGame)
+    nicknameInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') startGame()
+    })
+})();
 </script>
 </body>
-
 </html>
