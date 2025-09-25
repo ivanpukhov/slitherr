@@ -817,7 +817,29 @@
         const blend = 0.65
         for (let i = 0; i < targetPath.length; i++) {
             const target = targetPath[i]
-            if (i === 0 || i === targetPath.length - 1 || i >= prev.length) {
+            if (i === 0) {
+                const prevPoint = prev[0]
+                if (!prevPoint) {
+                    smoothed.push({ x: target.x, y: target.y })
+                } else {
+                    const tailDist = Math.hypot(target.x - prevPoint.x, target.y - prevPoint.y)
+                    if (tailDist > SEGMENT_SPACING * 12) {
+                        smoothed.push({ x: target.x, y: target.y })
+                    } else {
+                        const tailBlend = tailDist > SEGMENT_SPACING * 4 ? 0.55 : 0.35
+                        smoothed.push({
+                            x: lerp(prevPoint.x, target.x, tailBlend),
+                            y: lerp(prevPoint.y, target.y, tailBlend)
+                        })
+                    }
+                }
+            } else if (i === 1 && prev.length > 1) {
+                const point = prev[1]
+                smoothed.push({
+                    x: lerp(point.x, target.x, 0.55),
+                    y: lerp(point.y, target.y, 0.55)
+                })
+            } else if (i === targetPath.length - 1 || i >= prev.length) {
                 smoothed.push({ x: target.x, y: target.y })
             } else {
                 const point = prev[i]
