@@ -444,30 +444,123 @@
     let hexPattern = buildHexPattern()
 
     function buildHexPattern() {
-        const size = 140
+        const size = 220
         const off = document.createElement('canvas')
         off.width = size
         off.height = size
         const c = off.getContext('2d')
-        c.fillStyle = '#0e1118'
-        c.fillRect(0, 0, size, size)
-        const center = size / 2
-        const radius = size * 0.48
 
-        c.beginPath()
-        for (let i = 0; i < 6; i++) {
-            const angle = Math.PI / 3 * i
-            const x = center + radius * Math.cos(angle)
-            const y = center + radius * Math.sin(angle)
-            if (i === 0) c.moveTo(x, y)
-            else c.lineTo(x, y)
+        const baseGradient = c.createLinearGradient(0, 0, size, size)
+        baseGradient.addColorStop(0, '#0b0f16')
+        baseGradient.addColorStop(1, '#151a24')
+        c.fillStyle = baseGradient
+        c.fillRect(0, 0, size, size)
+
+        const center = size / 2
+        const outerRadius = size * 0.42
+        const middleRadius = outerRadius * 0.78
+        const innerRadius = middleRadius * 0.64
+
+        const hexPath = (radius) => {
+            const path = new Path2D()
+            for (let i = 0; i < 6; i++) {
+                const angle = Math.PI / 3 * i + Math.PI / 6
+                const x = center + radius * Math.cos(angle)
+                const y = center + radius * Math.sin(angle)
+                if (i === 0) path.moveTo(x, y)
+                else path.lineTo(x, y)
+            }
+            path.closePath()
+            return path
         }
-        c.closePath()
-        c.fillStyle = '#151a24'
-        c.fill()
-        c.lineWidth = 3
-        c.strokeStyle = '#1d2735'
-        c.stroke()
+
+        const outerPath = hexPath(outerRadius)
+        const middlePath = hexPath(middleRadius)
+        const innerPath = hexPath(innerRadius)
+
+        const outerFill = c.createRadialGradient(center, center, outerRadius * 0.25, center, center, outerRadius)
+        outerFill.addColorStop(0, '#0e1118')
+        outerFill.addColorStop(0.55, '#101621')
+        outerFill.addColorStop(1, '#151a24')
+        c.fillStyle = outerFill
+        c.fill(outerPath)
+
+        const rimGradient = c.createLinearGradient(center - outerRadius, center - outerRadius, center + outerRadius, center + outerRadius)
+        rimGradient.addColorStop(0, '#27384f')
+        rimGradient.addColorStop(0.5, '#1d2735')
+        rimGradient.addColorStop(1, '#121925')
+        c.lineWidth = 3.2
+        c.strokeStyle = rimGradient
+        c.stroke(outerPath)
+
+        c.save()
+        c.clip(outerPath)
+        const innerShadow = c.createRadialGradient(center - outerRadius * 0.3, center - outerRadius * 0.35, outerRadius * 0.1, center, center, outerRadius)
+        innerShadow.addColorStop(0, 'rgba(38, 55, 76, 0.45)')
+        innerShadow.addColorStop(1, 'rgba(5, 7, 12, 0)')
+        c.fillStyle = innerShadow
+        c.fillRect(center - outerRadius, center - outerRadius, outerRadius * 2, outerRadius * 2)
+
+        const bottomShadow = c.createLinearGradient(center, center - outerRadius, center, center + outerRadius)
+        bottomShadow.addColorStop(0, 'rgba(3, 5, 9, 0)')
+        bottomShadow.addColorStop(0.6, 'rgba(6, 9, 14, 0.25)')
+        bottomShadow.addColorStop(1, 'rgba(4, 6, 10, 0.55)')
+        c.fillStyle = bottomShadow
+        c.fillRect(center - outerRadius, center - outerRadius, outerRadius * 2, outerRadius * 2)
+        c.restore()
+
+        const middleFill = c.createLinearGradient(center, center - middleRadius, center, center + middleRadius)
+        middleFill.addColorStop(0, '#111724')
+        middleFill.addColorStop(0.55, '#0c1018')
+        middleFill.addColorStop(1, '#080b12')
+        c.fillStyle = middleFill
+        c.fill(middlePath)
+
+        const middleStroke = c.createLinearGradient(center - middleRadius, center - middleRadius, center + middleRadius, center + middleRadius)
+        middleStroke.addColorStop(0, 'rgba(59, 76, 103, 0.55)')
+        middleStroke.addColorStop(0.5, 'rgba(29, 39, 53, 0.6)')
+        middleStroke.addColorStop(1, 'rgba(12, 17, 26, 0.5)')
+        c.lineWidth = 2.2
+        c.strokeStyle = middleStroke
+        c.stroke(middlePath)
+
+        c.save()
+        c.clip(middlePath)
+        const middleHighlight = c.createRadialGradient(center + middleRadius * 0.35, center - middleRadius * 0.5, middleRadius * 0.1, center, center, middleRadius)
+        middleHighlight.addColorStop(0, 'rgba(94, 109, 138, 0.28)')
+        middleHighlight.addColorStop(1, 'rgba(9, 12, 18, 0)')
+        c.fillStyle = middleHighlight
+        c.fillRect(center - middleRadius, center - middleRadius, middleRadius * 2, middleRadius * 2)
+        c.restore()
+
+        const innerFill = c.createRadialGradient(center, center, innerRadius * 0.2, center, center, innerRadius)
+        innerFill.addColorStop(0, '#141a26')
+        innerFill.addColorStop(0.7, '#0d121b')
+        innerFill.addColorStop(1, '#0a0f18')
+        c.fillStyle = innerFill
+        c.fill(innerPath)
+
+        const innerStroke = c.createLinearGradient(center - innerRadius, center - innerRadius, center + innerRadius, center + innerRadius)
+        innerStroke.addColorStop(0, 'rgba(59, 130, 246, 0.22)')
+        innerStroke.addColorStop(0.45, 'rgba(37, 99, 235, 0.18)')
+        innerStroke.addColorStop(1, 'rgba(12, 23, 38, 0.42)')
+        c.lineWidth = 1.6
+        c.strokeStyle = innerStroke
+        c.stroke(innerPath)
+
+        const bevelHighlight = c.createLinearGradient(center - outerRadius, center - outerRadius, center + outerRadius, center + outerRadius)
+        bevelHighlight.addColorStop(0, 'rgba(97, 123, 163, 0.25)')
+        bevelHighlight.addColorStop(0.35, 'rgba(61, 82, 113, 0.18)')
+        bevelHighlight.addColorStop(1, 'rgba(12, 17, 27, 0)')
+        c.lineWidth = 4
+        c.strokeStyle = bevelHighlight
+        c.stroke(outerPath)
+
+        const subtleGlow = c.createRadialGradient(center, center, innerRadius, center, center, outerRadius * 1.05)
+        subtleGlow.addColorStop(0.85, 'rgba(19, 27, 39, 0)')
+        subtleGlow.addColorStop(1, 'rgba(26, 37, 53, 0.22)')
+        c.fillStyle = subtleGlow
+        c.fill(outerPath)
 
         return ctx.createPattern(off, 'repeat')
     }
