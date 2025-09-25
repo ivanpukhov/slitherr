@@ -16,6 +16,69 @@ const SKIN_PRESETS = {
 function rnd(a, b) { return a + Math.random() * (b - a) }
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v }
 function dist2(ax, ay, bx, by) { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy }
+function normalizeAngle(a) {
+    let angle = a
+    while (angle <= -Math.PI) angle += Math.PI * 2
+    while (angle > Math.PI) angle -= Math.PI * 2
+    return angle
+}
+
+function projectToCircle(cx, cy, radius, x, y) {
+    const dx = x - cx
+    const dy = y - cy
+    const dist = Math.hypot(dx, dy)
+    if (dist === 0) return { x: cx, y: cy }
+    if (dist <= radius) return { x, y }
+    const scale = radius / dist
+    return {
+        x: cx + dx * scale,
+        y: cy + dy * scale
+    }
+}
+
+function randomPointInCircle(cx, cy, radius) {
+    const t = Math.random() * Math.PI * 2
+    const r = radius * Math.sqrt(Math.random())
+    return {
+        x: cx + Math.cos(t) * r,
+        y: cy + Math.sin(t) * r
+    }
+}
+
+function resamplePath(points, spacing) {
+    if (!points || points.length === 0) return []
+    if (points.length === 1) return [{ x: points[0].x, y: points[0].y }]
+    const output = [{ x: points[0].x, y: points[0].y }]
+    let prev = points[0]
+    let carry = 0
+    for (let i = 1; i < points.length; i++) {
+        const current = points[i]
+        let dx = current.x - prev.x
+        let dy = current.y - prev.y
+        let segLength = Math.hypot(dx, dy)
+        if (segLength === 0) continue
+        while (carry + segLength >= spacing) {
+            const remain = spacing - carry
+            const t = remain / segLength
+            const nx = prev.x + dx * t
+            const ny = prev.y + dy * t
+            output.push({ x: nx, y: ny })
+            prev = { x: nx, y: ny }
+            dx = current.x - prev.x
+            dy = current.y - prev.y
+            segLength = Math.hypot(dx, dy)
+            carry = 0
+        }
+        carry += segLength
+        prev = current
+    }
+    const last = points[points.length - 1]
+    const tail = output[output.length - 1]
+    if (!tail || tail.x !== last.x || tail.y !== last.y) {
+        output.push({ x: last.x, y: last.y })
+    }
+    return output
+}
 
 class World {
     constructor(cfg, killLogger) {
@@ -33,6 +96,13 @@ class World {
         ]
         this.nextFoodId = 1
         this.tickId = 0
+        this.centerX = cfg.width / 2
+        this.centerY = cfg.height / 2
+        this.radius = Math.min(cfg.width, cfg.height) / 2
+        this.maxTurnRate = typeof cfg.maxTurnRate === 'number'
+            ? cfg.maxTurnRate
+            : cfg.maxTurn * cfg.tickRate
+
         for (let i = 0; i < cfg.initialFood; i++) this.spawnFood()
     }
 
@@ -41,31 +111,34 @@ class World {
     }
 
     spawnFoodAt(x, y, value = 1, options = {}) {
+        const pos = projectToCircle(this.centerX, this.centerY, this.radius, x, y)
         const id = "f" + (this.nextFoodId++)
         const palette = options.palette || this.foodPalette
         const color = options.color || palette[Math.floor(Math.random() * palette.length)]
         const big = Boolean(options.big)
         const createdAt = Date.now()
         const pulse = typeof options.pulse === 'number' ? options.pulse : Math.random() * Math.PI * 2
-        const f = { id, x, y, v: value, color, big, pulse, createdAt }
+        const f = { id, x: pos.x, y: pos.y, v: value, color, big, pulse, createdAt }
         this.foods.set(id, f)
-        const key = this.foodSpatial.add(id, x, y)
+        const key = this.foodSpatial.add(id, f.x, f.y)
         this.foodCells.set(id, key)
     }
 
     spawnFood() {
-        this.spawnFoodAt(rnd(0, this.cfg.width), rnd(0, this.cfg.height), 1)
+        const p = randomPointInCircle(this.centerX, this.centerY, this.radius)
+        this.spawnFoodAt(p.x, p.y, 1)
     }
 
     addPlayer(ws, name, skin) {
         const id = randomUUID()
+        const spawn = randomPointInCircle(this.centerX, this.centerY, this.radius * 0.95)
         const p = {
             id,
             ws,
             name: name || "",
             skin: skin || "default",
-            x: rnd(0, this.cfg.width),
-            y: rnd(0, this.cfg.height),
+            x: spawn.x,
+            y: spawn.y,
             angle: rnd(0, Math.PI * 2),
             speed: this.cfg.baseSpeed,
             length: this.cfg.baseLength,
@@ -81,6 +154,7 @@ class World {
             r: this.cfg.headRadius
         }
         p.dir = p.angle
+        p.targetAngle = p.angle
         this.players.set(id, p)
         const key = this.playerSpatial.add(id, p.x, p.y)
         this.playerCells.set(id, key)
@@ -96,9 +170,11 @@ class World {
     }
 
     respawn(p) {
-        p.x = rnd(0, this.cfg.width)
-        p.y = rnd(0, this.cfg.height)
+        const spawn = randomPointInCircle(this.centerX, this.centerY, this.radius * 0.95)
+        p.x = spawn.x
+        p.y = spawn.y
         p.angle = rnd(0, Math.PI * 2)
+        p.targetAngle = p.angle
         p.length = this.cfg.baseLength
         p.alive = true
         p.boost = false
@@ -112,9 +188,10 @@ class World {
         if (now - p.lastInputTs < this.cfg.inputMinIntervalMs) return
         p.lastInputTs = now
         if (typeof data.angle === 'number') {
-            const da = data.angle - p.angle
-            const clampDA = clamp(da, -this.cfg.maxTurn, this.cfg.maxTurn)
-            p.angle = p.angle + clampDA
+            const desired = normalizeAngle(data.angle)
+            if (Number.isFinite(desired)) {
+                p.targetAngle = desired
+            }
         }
         if (typeof data.boost === 'boolean') p.boost = data.boost
     }
@@ -122,6 +199,12 @@ class World {
     stepMovement(dt) {
         for (const p of this.players.values()) {
             if (!p.alive) continue
+
+            const desiredAngle = typeof p.targetAngle === 'number' ? p.targetAngle : p.angle
+            const diff = normalizeAngle(desiredAngle - p.angle)
+            const maxTurn = this.maxTurnRate * dt
+            const turn = clamp(diff, -maxTurn, maxTurn)
+            p.angle = normalizeAngle(p.angle + turn)
 
             // скорость
             const growth = Math.max(0, p.length - this.cfg.baseLength)
@@ -139,11 +222,10 @@ class World {
             p.y += Math.sin(p.angle) * speed * dt
             p.dir = p.angle
 
-            // границы карты
-            if (p.x < 0) p.x = 0
-            if (p.y < 0) p.y = 0
-            if (p.x > this.cfg.width) p.x = this.cfg.width
-            if (p.y > this.cfg.height) p.y = this.cfg.height
+            // границы карты (круглый мир)
+            const border = projectToCircle(this.centerX, this.centerY, Math.max(0, this.radius - p.r), p.x, p.y)
+            p.x = border.x
+            p.y = border.y
 
             // записываем точку пути, если голова прошла достаточно расстояния
             const last = p.path[p.path.length - 1]
@@ -251,35 +333,35 @@ class World {
         victim.path = []
 
         const totalValue = Math.max(1, Math.floor(victim.length))
-        let remaining = totalValue
         const palette = this.skinPalette(victim.skin)
         const anchors = dropPath.length ? dropPath : [{ x: victim.x, y: victim.y }]
-        const pieces = Math.max(8, Math.ceil(totalValue / this.cfg.deathFoodChunkValue))
-        const step = Math.max(1, Math.floor(anchors.length / pieces))
+        const spacing = Math.max(6, this.cfg.segmentSpacing * 1.1)
+        const sampled = resamplePath(anchors, spacing)
+        const points = sampled.length ? sampled : anchors
+        const pieces = Math.max(1, Math.ceil(totalValue / this.cfg.deathFoodChunkValue))
+        const stride = Math.max(1, Math.floor(points.length / pieces))
 
-        for (let i = anchors.length - 1; i >= 0 && remaining > 0; i -= step) {
-            const target = anchors[i]
-            const base = Math.max(5, Math.round(totalValue / pieces))
-            const value = Math.min(remaining, Math.round(base * rnd(0.75, 1.35)))
-            const a = rnd(0, Math.PI * 2)
-            const d = rnd(this.cfg.deathScatterRadius * 0.1, this.cfg.deathScatterRadius)
-            const x = clamp(target.x + Math.cos(a) * d, 0, this.cfg.width)
-            const y = clamp(target.y + Math.sin(a) * d, 0, this.cfg.height)
-            this.spawnFoodAt(x, y, value, {
+        let remaining = totalValue
+        for (let i = points.length - 1; i >= 0 && remaining > 0; i -= stride) {
+            const target = points[i]
+            const base = Math.max(3, Math.round(totalValue / pieces))
+            const value = Math.min(remaining, Math.round(base * rnd(0.8, 1.3)))
+            const clamped = projectToCircle(this.centerX, this.centerY, this.radius, target.x, target.y)
+            this.spawnFoodAt(clamped.x, clamped.y, value, {
                 palette,
                 big: value >= this.cfg.bigFoodThreshold
             })
             remaining -= value
         }
 
-        while (remaining > 0) {
-            const value = Math.min(remaining, 3)
-            const a = rnd(0, Math.PI * 2)
-            const d = rnd(0, this.cfg.deathScatterRadius * 0.6)
-            const x = clamp(victim.x + Math.cos(a) * d, 0, this.cfg.width)
-            const y = clamp(victim.y + Math.sin(a) * d, 0, this.cfg.height)
-            this.spawnFoodAt(x, y, value, { palette })
+        let index = points.length - 1
+        while (remaining > 0 && points.length) {
+            const target = points[index]
+            const clamped = projectToCircle(this.centerX, this.centerY, this.radius, target.x, target.y)
+            const value = Math.min(remaining, 2)
+            this.spawnFoodAt(clamped.x, clamped.y, value, { palette })
             remaining -= value
+            index = (index - 1 + points.length) % points.length
         }
 
         this.killLogger.log({
