@@ -58,6 +58,7 @@ const cfg = {
     tickRate: 40,
     snapshotRate: 15,
     maxTurn: 0.18,
+    maxTurnRate: 7.2,
     inputMinIntervalMs: 10,
 
     // анти-спам и пинг
@@ -110,7 +111,8 @@ wss.on('connection', (ws) => {
                 type: MSG_WELCOME,
                 id: p.id,
                 width: cfg.width,
-                height: cfg.height
+                height: cfg.height,
+                radius: world.radius
             })
             return
         }

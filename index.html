@@ -115,6 +115,32 @@
             white-space: nowrap;
         }
 
+        #minimapPanel {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            width: 220px;
+            padding: 16px;
+        }
+
+        #minimapPanel .title {
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            color: rgba(148, 163, 184, 0.76);
+            margin-bottom: 10px;
+        }
+
+        #minimapCanvas {
+            display: block;
+            width: 188px;
+            height: 188px;
+            border-radius: 16px;
+            border: 1px solid rgba(59, 76, 103, 0.45);
+            background: rgba(10, 16, 26, 0.65);
+        }
+
         .overlay {
             position: fixed;
             inset: 0;
@@ -288,6 +314,14 @@
             #scorePanel {
                 left: 24px;
             }
+
+            #minimapPanel {
+                top: 24px;
+                bottom: auto;
+                right: 24px;
+                left: auto;
+                width: 200px;
+            }
         }
     </style>
 </head>
@@ -301,6 +335,10 @@
 <div id="leaderboard" class="panel">
     <div class="title">Лидеры</div>
     <ol id="leaderboardList"></ol>
+</div>
+<div id="minimapPanel" class="panel">
+    <div class="title">Карта</div>
+    <canvas id="minimapCanvas" width="188" height="188"></canvas>
 </div>
 <div id="nicknameScreen" class="overlay">
     <div class="card">
@@ -341,6 +379,8 @@
     const skinList = document.getElementById('skinList')
     const skinName = document.getElementById('skinName')
     const startBtn = document.getElementById('startBtn')
+    const minimapCanvas = document.getElementById('minimapCanvas')
+    const minimapCtx = minimapCanvas.getContext('2d')
 
     const SKINS = {
         rainbow: ['#ff004d', '#ff7a00', '#ffd400', '#2bff00', '#00d5ff', '#6a00ff', '#ff00e5'],
@@ -364,6 +404,14 @@
         default: 'Classic'
     }
 
+    const FOOD_PULSE_SPEED = 4.2
+    const CAMERA_SMOOTH = 6.5
+    const POSITION_SMOOTH = 12
+    const ANGLE_SMOOTH = 10
+    const CAMERA_ZOOM = 1.18
+    const MAX_PREDICTION_SECONDS = 0.45
+    const MINIMAP_SIZE = 188
+
     function setCanvasSize() {
         const width = window.innerWidth
         const height = window.innerHeight
@@ -374,9 +422,21 @@
         ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
     }
 
+    function setMinimapSize() {
+        if (!minimapCanvas) return
+        const size = MINIMAP_SIZE
+        minimapCanvas.width = Math.round(size * DPR)
+        minimapCanvas.height = Math.round(size * DPR)
+        minimapCanvas.style.width = size + 'px'
+        minimapCanvas.style.height = size + 'px'
+        minimapCtx.setTransform(DPR, 0, 0, DPR, 0, 0)
+    }
+
     setCanvasSize()
+    setMinimapSize()
     window.addEventListener('resize', () => {
         setCanvasSize()
+        setMinimapSize()
         hexPattern = buildHexPattern()
     })
 
@@ -423,7 +483,8 @@
         meId: null,
         meName: '',
         alive: false,
-        camera: { x: 0, y: 0, targetX: 0, targetY: 0 },
+        world: null,
+        camera: { x: 0, y: 0, targetX: 0, targetY: 0, zoom: CAMERA_ZOOM, initialized: false },
         pointerAngle: null,
         pointerBoost: false,
         lastInputSent: 0,
@@ -433,13 +494,6 @@
     buildSkinPicker()
     renderLeaderboard()
     updateHUD(0)
-
-    const FOOD_PULSE_SPEED = 4.2
-    const CAMERA_SMOOTH = 6.5
-    const POSITION_SMOOTH = 12
-    const ANGLE_SMOOTH = 10
-
-
 
     let hexPattern = buildHexPattern()
 
@@ -556,6 +610,26 @@
             if (message.type === 'welcome') {
                 state.meId = message.id
                 state.alive = true
+                if (typeof message.width === 'number' && typeof message.height === 'number') {
+                    const radius = typeof message.radius === 'number'
+                        ? message.radius
+                        : Math.min(message.width, message.height) / 2
+                    state.world = {
+                        width: message.width,
+                        height: message.height,
+                        radius,
+                        centerX: message.width / 2,
+                        centerY: message.height / 2
+                    }
+                    if (!state.camera.initialized) {
+                        state.camera.x = state.world.centerX
+                        state.camera.y = state.world.centerY
+                        state.camera.targetX = state.world.centerX
+                        state.camera.targetY = state.world.centerY
+                        state.camera.initialized = true
+                    }
+                }
+                state.camera.zoom = CAMERA_ZOOM
             }
             if (message.type === 'snapshot') {
                 state.lastSnapshotAt = performance.now()
@@ -644,7 +718,14 @@
 
     function upsertSnake(payload) {
         const id = payload.id
+        const now = performance.now()
+        const rawDir = typeof payload.dir === 'number'
+            ? payload.dir
+            : (typeof payload.angle === 'number' ? payload.angle : 0)
+        const rawAngle = typeof payload.angle === 'number' ? payload.angle : rawDir
         let snake = state.snakes.get(id)
+        const previousSpeed = snake && typeof snake.speed === 'number' ? snake.speed : 0
+        const speed = typeof payload.speed === 'number' ? payload.speed : previousSpeed
         if (!snake) {
             snake = {
                 id,
@@ -652,32 +733,46 @@
                 displayY: payload.y,
                 targetX: payload.x,
                 targetY: payload.y,
-                displayAngle: payload.angle || 0,
-                targetAngle: payload.angle || 0,
-                displayDir: payload.dir || payload.angle || 0,
-                targetDir: payload.dir || payload.angle || 0,
+                displayAngle: rawAngle,
+                targetAngle: rawAngle,
+                displayDir: rawDir,
+                targetDir: rawDir,
                 renderPath: [],
                 length: payload.length || 0,
                 displayLength: payload.length || 0,
-                speed: payload.speed || 0,
+                speed: speed,
                 alive: payload.alive,
                 name: payload.name || '',
-                skin: payload.skin || 'default'
+                skin: payload.skin || 'default',
+                serverX: payload.x,
+                serverY: payload.y,
+                serverAngle: rawAngle,
+                serverDir: rawDir,
+                velocityX: Math.cos(rawDir) * speed,
+                velocityY: Math.sin(rawDir) * speed,
+                lastServerAt: now
             }
             state.snakes.set(id, snake)
         }
+        snake.serverX = payload.x
+        snake.serverY = payload.y
+        snake.serverAngle = rawAngle
+        snake.serverDir = rawDir
+        snake.lastServerAt = now
+        snake.velocityX = Math.cos(rawDir) * speed
+        snake.velocityY = Math.sin(rawDir) * speed
         snake.targetX = payload.x
         snake.targetY = payload.y
-        snake.targetAngle = payload.angle || snake.targetAngle
-        snake.targetDir = payload.dir || snake.targetAngle
+        snake.targetAngle = rawAngle
+        snake.targetDir = rawDir
         snake.length = payload.length || snake.length
-        snake.speed = payload.speed || snake.speed
+        snake.speed = speed
         snake.alive = payload.alive
         snake.name = payload.name || ''
         snake.skin = payload.skin || 'default'
         if (typeof snake.displayLength !== 'number') snake.displayLength = snake.length
         const rawPath = Array.isArray(payload.path) ? payload.path : []
-        const rebuiltPath = rebuildPath(rawPath, payload.x, payload.y, snake.length, snake.targetDir)
+        const rebuiltPath = rebuildPath(rawPath, payload.x, payload.y, snake.length, rawDir)
         smoothAssignPath(snake, rebuiltPath)
     }
 
@@ -850,12 +945,38 @@
     function update(dt) {
         const smoothPos = Math.min(1, dt * POSITION_SMOOTH)
         const smoothAngle = Math.min(1, dt * ANGLE_SMOOTH)
+        const now = performance.now()
         for (const snake of state.snakes.values()) {
-            snake.displayX = lerp(snake.displayX, snake.targetX, smoothPos)
-            snake.displayY = lerp(snake.displayY, snake.targetY, smoothPos)
-            snake.displayAngle = lerpAngle(snake.displayAngle, snake.targetAngle, smoothAngle)
-            snake.displayDir = lerpAngle(snake.displayDir, snake.targetDir, smoothAngle)
-            snake.displayLength = lerp(snake.displayLength || snake.length, snake.length, Math.min(1, dt * 6))
+            if (typeof snake.serverX === 'number' && typeof snake.serverY === 'number') {
+                const elapsed = Math.max(0, Math.min(MAX_PREDICTION_SECONDS, (now - (snake.lastServerAt || now)) / 1000))
+                const vx = snake.velocityX || 0
+                const vy = snake.velocityY || 0
+                const predictedX = snake.serverX + vx * elapsed
+                const predictedY = snake.serverY + vy * elapsed
+                snake.targetX = predictedX
+                snake.targetY = predictedY
+                if (vx || vy) {
+                    const heading = Math.atan2(vy, vx)
+                    if (Number.isFinite(heading)) {
+                        snake.targetDir = heading
+                        snake.targetAngle = heading
+                    }
+                } else if (typeof snake.serverAngle === 'number') {
+                    snake.targetAngle = snake.serverAngle
+                }
+                if (snake.renderPath && snake.renderPath.length) {
+                    snake.renderPath[snake.renderPath.length - 1] = { x: predictedX, y: predictedY }
+                }
+            }
+            const baseX = typeof snake.displayX === 'number' ? snake.displayX : snake.targetX
+            const baseY = typeof snake.displayY === 'number' ? snake.displayY : snake.targetY
+            const baseAngle = typeof snake.displayAngle === 'number' ? snake.displayAngle : snake.targetAngle
+            const baseDir = typeof snake.displayDir === 'number' ? snake.displayDir : snake.targetDir
+            snake.displayX = lerp(baseX, snake.targetX, smoothPos)
+            snake.displayY = lerp(baseY, snake.targetY, smoothPos)
+            snake.displayAngle = lerpAngle(baseAngle, snake.targetAngle, smoothAngle)
+            snake.displayDir = lerpAngle(baseDir, snake.targetDir, smoothAngle)
+            snake.displayLength = lerp(typeof snake.displayLength === 'number' ? snake.displayLength : snake.length, snake.length, Math.min(1, dt * 6))
             if (!snake.alive && snake.renderPath.length) {
                 snake.renderPath = snake.renderPath.slice(-1)
             }
@@ -865,14 +986,21 @@
         if (camTarget) {
             state.camera.targetX = camTarget.displayX
             state.camera.targetY = camTarget.displayY
+        } else if (state.world && !state.camera.initialized) {
+            state.camera.targetX = state.world.centerX
+            state.camera.targetY = state.world.centerY
         }
+        const camBaseX = typeof state.camera.x === 'number' ? state.camera.x : state.camera.targetX
+        const camBaseY = typeof state.camera.y === 'number' ? state.camera.y : state.camera.targetY
         const camK = Math.min(1, dt * CAMERA_SMOOTH)
-        state.camera.x = lerp(state.camera.x, state.camera.targetX, camK)
-        state.camera.y = lerp(state.camera.y, state.camera.targetY, camK)
+        state.camera.x = lerp(camBaseX, state.camera.targetX, camK)
+        state.camera.y = lerp(camBaseY, state.camera.targetY, camK)
 
         for (const food of state.foods.values()) {
-            food.displayX = lerp(food.displayX, food.targetX, smoothPos)
-            food.displayY = lerp(food.displayY, food.targetY, smoothPos)
+            const baseX = typeof food.displayX === 'number' ? food.displayX : food.targetX
+            const baseY = typeof food.displayY === 'number' ? food.displayY : food.targetY
+            food.displayX = lerp(baseX, food.targetX, smoothPos)
+            food.displayY = lerp(baseY, food.targetY, smoothPos)
             food.life = Math.min(1, (food.life || 0) + dt * 3.2)
         }
     }
@@ -880,67 +1008,125 @@
     function draw(time) {
         const width = canvas.width / DPR
         const height = canvas.height / DPR
-        drawBackground(state.camera.x, state.camera.y, width, height)
-        drawFoods(state.camera.x, state.camera.y, time)
-        drawSnakes(state.camera.x, state.camera.y)
+        const zoom = state.camera.zoom || 1
+        drawBackground(state.camera.x, state.camera.y, width, height, zoom)
+        drawFoods(state.camera.x, state.camera.y, time, zoom)
+        drawSnakes(state.camera.x, state.camera.y, zoom)
+        drawMinimap()
     }
 
-    function drawBackground(camX, camY, width, height) {
+    function drawBackground(camX, camY, width, height, zoom) {
         ctx.save()
         ctx.fillStyle = '#05070d'
         ctx.fillRect(0, 0, width, height)
-        ctx.translate(width / 2 - camX, height / 2 - camY)
+        ctx.translate(width / 2, height / 2)
+        ctx.scale(zoom, zoom)
+        ctx.translate(-camX, -camY)
         ctx.globalAlpha = 0.9
-        const pad = Math.max(width, height) * 1.6
-        ctx.fillStyle = hexPattern
-        ctx.fillRect(camX - pad, camY - pad, pad * 2, pad * 2)
+        const pad = Math.max(width, height) * 1.6 / Math.max(zoom, 0.001)
+        if (state.world) {
+            const { centerX, centerY, radius } = state.world
+            ctx.save()
+            ctx.beginPath()
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2)
+            ctx.clip()
+            ctx.fillStyle = hexPattern
+            ctx.fillRect(centerX - radius - pad, centerY - radius - pad, (radius + pad) * 2, (radius + pad) * 2)
+            ctx.restore()
+            ctx.lineWidth = Math.max(8 / zoom, 4)
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.28)'
+            ctx.beginPath()
+            ctx.arc(centerX, centerY, radius + Math.max(12 / zoom, 6), 0, Math.PI * 2)
+            ctx.stroke()
+            ctx.lineWidth = Math.max(2.5 / zoom, 1.4)
+            ctx.strokeStyle = 'rgba(37, 99, 235, 0.18)'
+            ctx.beginPath()
+            ctx.arc(centerX, centerY, radius - Math.max(18 / zoom, 9), 0, Math.PI * 2)
+            ctx.stroke()
+        } else {
+            ctx.fillStyle = hexPattern
+            ctx.fillRect(camX - pad, camY - pad, pad * 2, pad * 2)
+        }
         ctx.restore()
 
-        const vignette = ctx.createRadialGradient(width / 2, height / 2, Math.min(width, height) * 0.2, width / 2, height / 2, Math.max(width, height) * 0.75)
+        const vignette = ctx.createRadialGradient(
+            width / 2,
+            height / 2,
+            Math.min(width, height) * 0.2,
+            width / 2,
+            height / 2,
+            Math.max(width, height) * 0.75
+        )
         vignette.addColorStop(0, 'rgba(5, 9, 16, 0)')
         vignette.addColorStop(1, 'rgba(0, 0, 0, 0.65)')
         ctx.fillStyle = vignette
         ctx.fillRect(0, 0, width, height)
     }
 
-    function drawFoods(camX, camY, time) {
+    function drawFoods(camX, camY, time, zoom) {
         ctx.save()
-        ctx.translate(canvas.width / DPR / 2 - camX, canvas.height / DPR / 2 - camY)
+        const halfWidth = canvas.width / DPR / 2
+        const halfHeight = canvas.height / DPR / 2
+        ctx.translate(halfWidth, halfHeight)
+        ctx.scale(zoom, zoom)
+        ctx.translate(-camX, -camY)
+        if (state.world) {
+            ctx.beginPath()
+            ctx.arc(state.world.centerX, state.world.centerY, state.world.radius, 0, Math.PI * 2)
+            ctx.clip()
+        }
         ctx.globalCompositeOperation = 'lighter'
         for (const food of state.foods.values()) {
             const color = food.color || '#ffd166'
             const pulse = 1 + Math.sin(time * FOOD_PULSE_SPEED + (food.pulse || 0)) * 0.16
-            const radius = (3.2 + Math.pow(food.value || 1, 0.55) * (food.big ? 1.45 : 1)) * pulse
-            ctx.globalAlpha = (food.big ? 0.95 : 0.85) * (food.life || 1)
-            ctx.shadowBlur = food.big ? 28 : 16
-            ctx.shadowColor = withAlpha(color, food.big ? 0.7 : 0.45)
-            const gradient = ctx.createRadialGradient(food.displayX, food.displayY, radius * 0.2, food.displayX, food.displayY, radius)
+            const magnitude = Math.pow(Math.max(food.value || 1, 1), 0.6)
+            const baseSize = food.big ? 6.6 : 4.8
+            const radius = (baseSize + magnitude * (food.big ? 1.45 : 1.1)) * pulse
+            const fx = typeof food.displayX === 'number' ? food.displayX : food.targetX
+            const fy = typeof food.displayY === 'number' ? food.displayY : food.targetY
+            ctx.globalAlpha = (food.big ? 0.95 : 0.88) * (food.life || 1)
+            ctx.shadowBlur = food.big ? 38 : 24
+            ctx.shadowColor = withAlpha(color, food.big ? 0.75 : 0.5)
+            const gradient = ctx.createRadialGradient(fx, fy, radius * 0.22, fx, fy, radius)
             gradient.addColorStop(0, '#ffffff')
             gradient.addColorStop(0.25, shadeColor(color, 0.2))
-            gradient.addColorStop(1, shadeColor(color, -0.4))
+            gradient.addColorStop(1, shadeColor(color, -0.45))
             ctx.fillStyle = gradient
             ctx.beginPath()
-            ctx.arc(food.displayX, food.displayY, radius, 0, Math.PI * 2)
+            ctx.arc(fx, fy, radius, 0, Math.PI * 2)
             ctx.fill()
         }
         ctx.restore()
         ctx.globalAlpha = 1
         ctx.shadowBlur = 0
+        ctx.shadowColor = 'transparent'
         ctx.globalCompositeOperation = 'source-over'
     }
 
-    function drawSnakes(camX, camY) {
+    function drawSnakes(camX, camY, zoom) {
         const snakes = Array.from(state.snakes.values()).filter((s) => s.alive)
         snakes.sort((a, b) => (a.displayLength || 0) - (b.displayLength || 0))
         ctx.save()
-        ctx.translate(canvas.width / DPR / 2 - camX, canvas.height / DPR / 2 - camY)
+        const halfWidth = canvas.width / DPR / 2
+        const halfHeight = canvas.height / DPR / 2
+        ctx.translate(halfWidth, halfHeight)
+        ctx.scale(zoom, zoom)
+        ctx.translate(-camX, -camY)
+        if (state.world) {
+            ctx.beginPath()
+            ctx.arc(state.world.centerX, state.world.centerY, state.world.radius, 0, Math.PI * 2)
+            ctx.clip()
+        }
         for (const snake of snakes) {
             const path = snake.renderPath
             if (!path || path.length < 2) continue
             const colors = SKINS[snake.skin] || SKINS.default
-            const bodyRadius = Math.max(6, Math.min(26, 4.6 + Math.pow(Math.max(snake.displayLength || snake.length || 20, 1), 0.4)))
+            const displayLength = snake.displayLength || snake.length || 20
+            const bodyRadius = Math.max(6, Math.min(26, 4.6 + Math.pow(Math.max(displayLength, 1), 0.4)))
             const headRadius = bodyRadius
-            const head = { x: snake.displayX, y: snake.displayY }
+            const headX = typeof snake.displayX === 'number' ? snake.displayX : snake.targetX
+            const headY = typeof snake.displayY === 'number' ? snake.displayY : snake.targetY
+            const head = { x: headX, y: headY }
             const tail = path[0]
             const gradient = ctx.createLinearGradient(tail.x, tail.y, head.x, head.y)
             if (colors.length === 1) {
@@ -952,7 +1138,7 @@
                     gradient.addColorStop(idx / denom, color)
                 })
             }
-            path[path.length - 1] = { x: snake.displayX, y: snake.displayY }
+            path[path.length - 1] = { x: head.x, y: head.y }
 
             ctx.lineJoin = 'round'
             ctx.lineCap = 'round'
@@ -985,7 +1171,7 @@
             ctx.arc(head.x, head.y, headRadius, 0, Math.PI * 2)
             ctx.fill()
 
-            const dir = snake.displayDir || 0
+            const dir = typeof snake.displayDir === 'number' ? snake.displayDir : snake.targetDir || 0
             const eyeOffset = headRadius * 0.58
             const sideOffset = headRadius * 0.32
             const pupilOffset = headRadius * 0.18
@@ -1013,6 +1199,92 @@
         ctx.shadowBlur = 0
         ctx.shadowColor = 'transparent'
         ctx.restore()
+    }
+
+    function drawMinimap() {
+        if (!minimapCtx) return
+        minimapCtx.setTransform(DPR, 0, 0, DPR, 0, 0)
+        const width = minimapCanvas.width / DPR
+        const height = minimapCanvas.height / DPR
+        minimapCtx.clearRect(0, 0, width, height)
+        if (!state.world) return
+        const cx = width / 2
+        const cy = height / 2
+        const mapRadius = Math.min(width, height) * 0.46
+        const scale = mapRadius / state.world.radius
+        const centerX = state.world.centerX
+        const centerY = state.world.centerY
+
+        minimapCtx.save()
+        minimapCtx.fillStyle = 'rgba(11, 18, 30, 0.92)'
+        minimapCtx.beginPath()
+        minimapCtx.arc(cx, cy, mapRadius, 0, Math.PI * 2)
+        minimapCtx.fill()
+        minimapCtx.lineWidth = Math.max(1.2, mapRadius * 0.05)
+        minimapCtx.strokeStyle = 'rgba(94, 117, 151, 0.45)'
+        minimapCtx.stroke()
+        minimapCtx.lineWidth = Math.max(0.8, mapRadius * 0.02)
+        minimapCtx.strokeStyle = 'rgba(59, 130, 246, 0.35)'
+        minimapCtx.beginPath()
+        minimapCtx.arc(cx, cy, mapRadius - minimapCtx.lineWidth * 1.4, 0, Math.PI * 2)
+        minimapCtx.stroke()
+        minimapCtx.restore()
+
+        minimapCtx.save()
+        minimapCtx.beginPath()
+        minimapCtx.arc(cx, cy, mapRadius - Math.max(2, mapRadius * 0.08), 0, Math.PI * 2)
+        minimapCtx.clip()
+
+        minimapCtx.globalAlpha = 0.9
+        for (const food of state.foods.values()) {
+            const fx = cx + (((typeof food.displayX === 'number' ? food.displayX : food.targetX) || centerX) - centerX) * scale
+            const fy = cy + (((typeof food.displayY === 'number' ? food.displayY : food.targetY) || centerY) - centerY) * scale
+            const radius = Math.max(2.2, 2.3 + Math.pow(Math.max(food.value || 1, 1), 0.32) * (food.big ? 1.5 : 1))
+            minimapCtx.fillStyle = food.color || '#ffd166'
+            minimapCtx.beginPath()
+            minimapCtx.arc(fx, fy, radius, 0, Math.PI * 2)
+            minimapCtx.fill()
+        }
+
+        minimapCtx.globalAlpha = 1
+        const snakes = Array.from(state.snakes.values()).filter((s) => s.alive)
+        snakes.sort((a, b) => (a.displayLength || a.length || 0) - (b.displayLength || b.length || 0))
+        for (const snake of snakes) {
+            const colors = SKINS[snake.skin] || SKINS.default
+            const hx = cx + (((typeof snake.displayX === 'number' ? snake.displayX : snake.targetX) || centerX) - centerX) * scale
+            const hy = cy + (((typeof snake.displayY === 'number' ? snake.displayY : snake.targetY) || centerY) - centerY) * scale
+            const headSize = Math.max(3, Math.pow(Math.max(snake.displayLength || snake.length || 20, 20), 0.27) * 0.6)
+            const path = snake.renderPath
+            if (path && path.length > 1) {
+                minimapCtx.beginPath()
+                const first = path[0]
+                minimapCtx.moveTo(cx + (first.x - centerX) * scale, cy + (first.y - centerY) * scale)
+                const step = Math.max(1, Math.floor(path.length / 24))
+                for (let i = step; i < path.length; i += step) {
+                    const point = path[i]
+                    minimapCtx.lineTo(cx + (point.x - centerX) * scale, cy + (point.y - centerY) * scale)
+                }
+                const tail = path[path.length - 1]
+                minimapCtx.lineTo(cx + (tail.x - centerX) * scale, cy + (tail.y - centerY) * scale)
+                minimapCtx.lineWidth = Math.max(1.2, headSize * 0.75)
+                minimapCtx.strokeStyle = withAlpha(colors[0], snake.id === state.meId ? 0.95 : 0.6)
+                minimapCtx.lineJoin = 'round'
+                minimapCtx.lineCap = 'round'
+                minimapCtx.stroke()
+            }
+            minimapCtx.fillStyle = colors[0]
+            minimapCtx.beginPath()
+            minimapCtx.arc(hx, hy, headSize, 0, Math.PI * 2)
+            minimapCtx.fill()
+            if (snake.id === state.meId) {
+                minimapCtx.lineWidth = Math.max(1.6, headSize * 0.6)
+                minimapCtx.strokeStyle = 'rgba(255, 255, 255, 0.9)'
+                minimapCtx.beginPath()
+                minimapCtx.arc(hx, hy, headSize + minimapCtx.lineWidth * 0.4, 0, Math.PI * 2)
+                minimapCtx.stroke()
+            }
+        }
+        minimapCtx.restore()
     }
 
     function strokePath(points) {
