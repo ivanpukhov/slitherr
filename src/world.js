@@ -1,7 +1,17 @@
 // src/world.js
 const { SpatialHash } = require('./spatial')
-// src/world.js
 const { v4: randomUUID } = require('uuid')
+
+const SKIN_PRESETS = {
+    rainbow: ['#ff004d', '#ff7a00', '#ffd400', '#2bff00', '#00d5ff', '#6a00ff', '#ff00e5'],
+    ocean: ['#7ef3ff', '#45a9ff', '#0c5bd6'],
+    lime: ['#ccffd7', '#62f2a0', '#1fb86a'],
+    fire: ['#fff1a6', '#ffb84c', '#ff5a36', '#d81e1e'],
+    candy: ['#ffe3f1', '#ff9fd2', '#ff58b4', '#c53df0'],
+    flag_ru: ['#ffffff', '#0052b4', '#d80027'],
+    flag_kz: ['#00aed6', '#ffd34f', '#00aed6', '#ffd34f'],
+    default: ['#cbd5e1', '#94a3b8', '#64748b']
+}
 
 function rnd(a, b) { return a + Math.random() * (b - a) }
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v }
@@ -17,14 +27,27 @@ class World {
         this.foodCells = new Map()
         this.playerSpatial = new SpatialHash(cfg.sectorSize)
         this.foodSpatial = new SpatialHash(cfg.sectorSize)
+        this.foodPalette = [
+            '#ffd166', '#fca311', '#ff5e57', '#4cd137', '#00e5ff', '#7d5fff',
+            '#ff8bd2', '#b7fbff', '#caffbf', '#fdffb6', '#ffd6a5', '#bdb2ff'
+        ]
         this.nextFoodId = 1
         this.tickId = 0
         for (let i = 0; i < cfg.initialFood; i++) this.spawnFood()
     }
 
-    spawnFoodAt(x, y, value = 1) {
+    skinPalette(skin) {
+        return SKIN_PRESETS[skin] || SKIN_PRESETS.default
+    }
+
+    spawnFoodAt(x, y, value = 1, options = {}) {
         const id = "f" + (this.nextFoodId++)
-        const f = { id, x, y, v: value }
+        const palette = options.palette || this.foodPalette
+        const color = options.color || palette[Math.floor(Math.random() * palette.length)]
+        const big = Boolean(options.big)
+        const createdAt = Date.now()
+        const pulse = typeof options.pulse === 'number' ? options.pulse : Math.random() * Math.PI * 2
+        const f = { id, x, y, v: value, color, big, pulse, createdAt }
         this.foods.set(id, f)
         const key = this.foodSpatial.add(id, x, y)
         this.foodCells.set(id, key)
@@ -57,6 +80,7 @@ class World {
             lastMsgWindowTs: Date.now(),
             r: this.cfg.headRadius
         }
+        p.dir = p.angle
         this.players.set(id, p)
         const key = this.playerSpatial.add(id, p.x, p.y)
         this.playerCells.set(id, key)
@@ -100,13 +124,20 @@ class World {
             if (!p.alive) continue
 
             // скорость
-            const speed = p.boost
-                ? this.cfg.baseSpeed * this.cfg.boostMultiplier
-                : this.cfg.baseSpeed
+            const growth = Math.max(0, p.length - this.cfg.baseLength)
+            const slowRatio = Math.pow(
+                1 / (1 + growth / this.cfg.speedLengthSoftCap),
+                this.cfg.speedLengthExponent
+            )
+            const lengthFactor = this.cfg.speedMinFactor + (1 - this.cfg.speedMinFactor) * slowRatio
+            const baseSpeed = this.cfg.baseSpeed * lengthFactor
+            const speed = p.boost ? baseSpeed * this.cfg.boostMultiplier : baseSpeed
+            p.speed = speed
 
             // обновляем позицию головы
             p.x += Math.cos(p.angle) * speed * dt
             p.y += Math.sin(p.angle) * speed * dt
+            p.dir = p.angle
 
             // границы карты
             if (p.x < 0) p.x = 0
@@ -144,7 +175,7 @@ class World {
                     p.lastDrop = Date.now()
                     const tx = p.path.length > 3 ? p.path[0].x : p.x
                     const ty = p.path.length > 3 ? p.path[0].y : p.y
-                    this.spawnFoodAt(tx, ty, 1)
+                    this.spawnFoodAt(tx, ty, 1, { palette: this.skinPalette(p.skin) })
                 }
             }
 
@@ -214,37 +245,61 @@ class World {
     kill(victim, killer) {
         if (!victim.alive) return
         victim.alive = false
+        victim.boost = false
 
-        // разбрасываем еду
-        const pieces = Math.max(5, Math.floor(victim.length / 2))
-        for (let i = 0; i < pieces; i++) {
+        const dropPath = victim.path.slice()
+        victim.path = []
+
+        const totalValue = Math.max(1, Math.floor(victim.length))
+        let remaining = totalValue
+        const palette = this.skinPalette(victim.skin)
+        const anchors = dropPath.length ? dropPath : [{ x: victim.x, y: victim.y }]
+        const pieces = Math.max(8, Math.ceil(totalValue / this.cfg.deathFoodChunkValue))
+        const step = Math.max(1, Math.floor(anchors.length / pieces))
+
+        for (let i = anchors.length - 1; i >= 0 && remaining > 0; i -= step) {
+            const target = anchors[i]
+            const base = Math.max(5, Math.round(totalValue / pieces))
+            const value = Math.min(remaining, Math.round(base * rnd(0.75, 1.35)))
             const a = rnd(0, Math.PI * 2)
-            const d = rnd(0, this.cfg.deathScatterRadius)
-            const x = clamp(victim.x + Math.cos(a) * d, 0, this.cfg.width)
-            const y = clamp(victim.y + Math.sin(a) * d, 0, this.cfg.height)
-            this.spawnFoodAt(x, y, 1)
+            const d = rnd(this.cfg.deathScatterRadius * 0.1, this.cfg.deathScatterRadius)
+            const x = clamp(target.x + Math.cos(a) * d, 0, this.cfg.width)
+            const y = clamp(target.y + Math.sin(a) * d, 0, this.cfg.height)
+            this.spawnFoodAt(x, y, value, {
+                palette,
+                big: value >= this.cfg.bigFoodThreshold
+            })
+            remaining -= value
         }
 
-        // лог
+        while (remaining > 0) {
+            const value = Math.min(remaining, 3)
+            const a = rnd(0, Math.PI * 2)
+            const d = rnd(0, this.cfg.deathScatterRadius * 0.6)
+            const x = clamp(victim.x + Math.cos(a) * d, 0, this.cfg.width)
+            const y = clamp(victim.y + Math.sin(a) * d, 0, this.cfg.height)
+            this.spawnFoodAt(x, y, value, { palette })
+            remaining -= value
+        }
+
         this.killLogger.log({
-            killer: killer.id,
+            killer: killer ? killer.id : null,
             victim: victim.id,
             x: victim.x,
             y: victim.y,
             tick: this.tickId,
             victimLength: Math.floor(victim.length),
-            killerLength: Math.floor(killer.length),
+            killerLength: killer ? Math.floor(killer.length) : 0,
             reason: 'head_vs_body'
         })
 
         if (victim.ws && victim.ws.readyState === 1) {
             victim.ws.send(JSON.stringify({
                 type: "death",
-                killerName: killer.name,
+                killerName: killer ? killer.name : "",
                 yourScore: Math.floor(victim.length)
             }))
         }
-
     }
 
     tick(dt) {
@@ -266,6 +321,7 @@ class World {
         for (const id of ps) {
             const o = this.players.get(id)
             if (!o) continue
+            if (!o.alive) continue
             if (dist2(px, py, o.x, o.y) <= r * r) {
                 players.push({
                     id: o.id,
@@ -276,7 +332,9 @@ class World {
                     alive: o.alive,
                     name: o.name,
                     skin: o.skin,
-                    path: o.path   // <--- добавляем весь путь
+                    path: o.path,
+                    dir: o.dir || o.angle,
+                    speed: o.speed || this.cfg.baseSpeed
                 })
             }
         }
@@ -284,7 +342,16 @@ class World {
         for (const id of fs) {
             const f = this.foods.get(id)
             if (!f) continue
-            if (dist2(px, py, f.x, f.y) <= r * r) foods.push({ id: f.id, x: f.x, y: f.y })
+            if (dist2(px, py, f.x, f.y) <= r * r) foods.push({
+                id: f.id,
+                x: f.x,
+                y: f.y,
+                v: f.v,
+                color: f.color,
+                big: f.big,
+                pulse: f.pulse,
+                createdAt: f.createdAt
+            })
         }
         return { players, foods }
     }

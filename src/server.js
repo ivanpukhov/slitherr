@@ -23,11 +23,13 @@ const cfg = {
     sectorSize: 128,
 
     // еда
-    initialFood: 800,
-    targetFood: 1200,
-    foodSpawnChance: 0.5,
-    foodPickupRadius: 18,
-    deathScatterRadius: 80,
+    initialFood: 900,
+    targetFood: 1400,
+    foodSpawnChance: 0.55,
+    foodPickupRadius: 26,
+    deathScatterRadius: 140,
+    deathFoodChunkValue: 14,
+    bigFoodThreshold: 12,
 
     // змея
     headRadius: 8,
@@ -35,6 +37,9 @@ const cfg = {
     baseLength: 20,
     minLength: 10,
     baseSpeed: 160,
+    speedMinFactor: 0.42,
+    speedLengthSoftCap: 500,
+    speedLengthExponent: 0.65,
     boostMultiplier: 1.7,
     boostLengthDrain: 3,
     boostDropIntervalMs: 120,
@@ -50,8 +55,8 @@ const cfg = {
     viewRadius: 900,
 
     // геймплей
-    tickRate: 30,
-    snapshotRate: 12,
+    tickRate: 40,
+    snapshotRate: 15,
     maxTurn: 0.18,
     inputMinIntervalMs: 10,
 
