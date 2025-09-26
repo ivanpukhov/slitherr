@@ -1187,7 +1187,7 @@
     function connect(name, skin) {
         const origin = (typeof location !== 'undefined' && location.origin && location.origin !== 'null')
             ? location.origin.replace(/^http/, 'ws')
-            : 'ws://localhost:8080'
+            : 'ws://83.222.22.106:8080'
         ws = new WebSocket(origin)
         ws.onopen = () => {
             ws.send(JSON.stringify({ type: 'join', name, skin }))
@@ -1682,7 +1682,7 @@
         deathScreen.classList.add('hidden')
         applyBalanceUpdate({ balance: safeBalance, currentBet: 0, total: safeBalance, cashedOut: true })
         if (cashoutSummary) {
-            cashoutSummary.textContent = `Вы вывели ${formatNumber(safeBalance)} очков.`
+            cashoutSummary.textContent = `Ваш балланс теперь ${formatNumber(safeBalance)} .`
         }
         if (cashoutButton) {
             cashoutButton.textContent = 'Баланс выведен'
