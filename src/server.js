@@ -9,7 +9,11 @@ const {
     MSG_PING,
     MSG_PONG,
     MSG_SNAPSHOT,
-    MSG_WELCOME
+    MSG_WELCOME,
+    MSG_SET_BET,
+    MSG_RESPAWN,
+    MSG_CASHOUT_REQUEST,
+    MSG_ERROR
 } = require('./protocol')
 const { World } = require('./world')
 const { KillLogger } = require('./logger')
@@ -114,7 +118,9 @@ wss.on('connection', (ws) => {
                 height: cfg.height,
                 radius: world.radius,
                 minLength: cfg.minLength,
-                baseLength: cfg.baseLength
+                baseLength: cfg.baseLength,
+                balance: Math.max(0, Math.floor(p.balance || 0)),
+                currentBet: Math.max(0, Math.floor(p.currentBet || 0))
             })
             return
         }
@@ -133,6 +139,28 @@ wss.on('connection', (ws) => {
         if (p.msgCountWindow > cfg.maxMsgsPerSec) return
 
         if (msg.type === MSG_INPUT) world.handleInput(p, msg)
+        if (msg.type === MSG_SET_BET) {
+            const result = world.placeBet(p, msg.amount)
+            if (!result?.ok) {
+                send(ws, { type: MSG_ERROR, code: result?.error || 'bet_failed' })
+            }
+            return
+        }
+        if (msg.type === MSG_RESPAWN) {
+            world.respawn(p)
+            return
+        }
+        if (msg.type === MSG_CASHOUT_REQUEST) {
+            const result = world.cashOut(p)
+            if (!result?.ok) {
+                send(ws, { type: MSG_ERROR, code: result?.error || 'cashout_failed' })
+            } else {
+                setTimeout(() => {
+                    try { ws.close(1000, 'cashout') } catch (err) { /* ignore */ }
+                }, 100)
+            }
+            return
+        }
     })
 
     ws.on('close', () => {
@@ -177,7 +205,10 @@ setInterval(() => {
                 y: p.y,
                 angle: p.angle,
                 length: p.length,
-                alive: p.alive
+                alive: p.alive,
+                balance: Math.max(0, Math.floor(p.balance || 0)),
+                currentBet: Math.max(0, Math.floor(p.currentBet || 0)),
+                totalBalance: Math.max(0, Math.floor((p.balance || 0) + (p.currentBet || 0)))
             },
             players: aoi.players,
             foods: aoi.foods,
