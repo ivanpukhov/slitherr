@@ -765,6 +765,10 @@
     const ANGLE_SMOOTH = 12
     const CAMERA_ZOOM = 1.18
     const MAX_PREDICTION_SECONDS = 0.45
+    const SERVER_TICK_RATE = 40
+    const INTERPOLATION_DELAY = 0.12
+    const NET_OFFSET_SMOOTH = 0.1
+    const MAX_SNAPSHOT_BUFFER = 45
     const SEGMENT_SPACING = 6
     const LENGTH_EPS = 1e-3
     const MINIMAP_SIZE = 188
@@ -1052,7 +1056,13 @@
         lastInputSent: 0,
         lastSnapshotAt: 0,
         account: { balance: 1000, currentBet: 0, total: 1000, cashedOut: false },
-        pendingBet: null
+        pendingBet: null,
+        net: {
+            snapshots: [],
+            timeOffset: null,
+            lastSignature: null,
+            lastServerTime: null
+        }
     }
 
     const pointerMedia = window.matchMedia('(pointer: coarse)')
@@ -1264,11 +1274,7 @@
                         total: message.you.totalBalance
                     })
                 }
-                applySnapshot(message)
-                refreshBoostState()
-                if (message.you && typeof message.you.length === 'number') {
-                    updateHUD(Math.floor(message.you.length))
-                }
+                queueSnapshot(message)
             }
             if (message.type === 'death') {
                 showDeath(message)
@@ -1350,6 +1356,202 @@
         for (const [id] of state.foods) {
             if (!foodSeen.has(id)) state.foods.delete(id)
         }
+    }
+
+    function queueSnapshot(snapshot) {
+        if (!snapshot) return
+        const nowSeconds = performance.now() / 1000
+        let serverTime = typeof snapshot.tick === 'number' ? snapshot.tick / SERVER_TICK_RATE : null
+        if (!Number.isFinite(serverTime)) {
+            if (typeof state.net.lastServerTime === 'number' && Number.isFinite(state.net.lastServerTime)) {
+                serverTime = state.net.lastServerTime + (1 / SERVER_TICK_RATE)
+            } else {
+                serverTime = nowSeconds
+            }
+        }
+        state.net.lastServerTime = serverTime
+        const offsetSample = nowSeconds - serverTime
+        if (!Number.isFinite(state.net.timeOffset)) {
+            state.net.timeOffset = offsetSample
+        } else {
+            state.net.timeOffset = lerp(state.net.timeOffset, offsetSample, NET_OFFSET_SMOOTH)
+        }
+        state.net.snapshots.push({
+            message: snapshot,
+            serverTime,
+            arrival: nowSeconds
+        })
+        if (state.net.snapshots.length > MAX_SNAPSHOT_BUFFER) {
+            state.net.snapshots.splice(0, state.net.snapshots.length - MAX_SNAPSHOT_BUFFER)
+        }
+        state.net.lastSignature = null
+    }
+
+    function syncSnapshotBuffer() {
+        const net = state.net
+        if (!net || net.snapshots.length === 0) return
+        const nowSeconds = performance.now() / 1000
+        let renderTime
+        if (Number.isFinite(net.timeOffset)) {
+            renderTime = nowSeconds - net.timeOffset - INTERPOLATION_DELAY
+        } else {
+            renderTime = net.snapshots[net.snapshots.length - 1].serverTime
+        }
+        let prev = net.snapshots[0]
+        let next = net.snapshots[net.snapshots.length - 1]
+        for (let i = 0; i < net.snapshots.length; i++) {
+            const item = net.snapshots[i]
+            if (item.serverTime <= renderTime) {
+                prev = item
+            }
+            if (item.serverTime >= renderTime) {
+                next = item
+                break
+            }
+        }
+        if (renderTime <= net.snapshots[0].serverTime) {
+            prev = net.snapshots[0]
+            next = net.snapshots[1] || prev
+        } else if (renderTime >= net.snapshots[net.snapshots.length - 1].serverTime) {
+            prev = net.snapshots[net.snapshots.length - 2] || net.snapshots[net.snapshots.length - 1]
+            next = net.snapshots[net.snapshots.length - 1]
+        }
+        let alpha = 0
+        if (next !== prev) {
+            const span = next.serverTime - prev.serverTime
+            if (span > 1e-4) {
+                alpha = (renderTime - prev.serverTime) / span
+            }
+        } else if (renderTime > next.serverTime) {
+            alpha = 1
+        }
+        if (!Number.isFinite(alpha)) alpha = 0
+        alpha = Math.max(0, Math.min(1, alpha))
+        const quantAlpha = Math.max(0, Math.min(1, Math.round(alpha * 2) / 2))
+        const signature = `${prev.message.tick || 'p'}:${next.message.tick || 'n'}:${quantAlpha.toFixed(1)}`
+        if (signature === net.lastSignature) return
+        const snapshot = next === prev
+            ? cloneSnapshot(next.message)
+            : blendSnapshots(prev.message, next.message, quantAlpha)
+        applySnapshot(snapshot)
+        net.lastSignature = signature
+        refreshBoostState()
+        if (snapshot.you && typeof snapshot.you.length === 'number') {
+            updateHUD(Math.floor(snapshot.you.length))
+        } else {
+            const meSnake = getMeSnake()
+            if (meSnake && typeof meSnake.length === 'number') {
+                updateHUD(Math.floor(meSnake.length))
+            }
+        }
+        const pivotIndex = net.snapshots.indexOf(prev)
+        if (pivotIndex > 1) {
+            net.snapshots.splice(0, pivotIndex - 1)
+        }
+    }
+
+    function cloneSnapshot(snapshot) {
+        if (!snapshot) return null
+        return {
+            type: snapshot.type,
+            tick: snapshot.tick,
+            you: snapshot.you ? { ...snapshot.you } : null,
+            players: Array.isArray(snapshot.players)
+                ? snapshot.players.map((p) => (p ? { ...p } : p))
+                : [],
+            foods: Array.isArray(snapshot.foods)
+                ? snapshot.foods.map((f) => (f ? { ...f } : f))
+                : [],
+            leaderboard: Array.isArray(snapshot.leaderboard)
+                ? snapshot.leaderboard.map((entry) => ({ ...entry }))
+                : snapshot.leaderboard
+        }
+    }
+
+    function blendSnapshots(prev, next, alpha) {
+        if (!prev && !next) return null
+        if (!prev) return cloneSnapshot(next)
+        if (!next) return cloneSnapshot(prev)
+        const prevPlayers = snapshotPlayersToMap(prev)
+        const nextPlayers = snapshotPlayersToMap(next)
+        const ids = new Set([...prevPlayers.keys(), ...nextPlayers.keys()])
+        const prevYou = prev.you && prev.you.id ? prev.you : null
+        const nextYou = next.you && next.you.id ? next.you : null
+        const youId = nextYou?.id || prevYou?.id || null
+        const players = []
+        let youPayload = null
+        ids.forEach((id) => {
+            const a = prevPlayers.get(id)
+            const b = nextPlayers.get(id)
+            const base = b || a
+            if (!base) return
+            const sample = { ...base }
+            if (a && b) {
+                if (typeof a.x === 'number' && typeof b.x === 'number') sample.x = lerp(a.x, b.x, alpha)
+                if (typeof a.y === 'number' && typeof b.y === 'number') sample.y = lerp(a.y, b.y, alpha)
+                if (typeof a.length === 'number' && typeof b.length === 'number') sample.length = lerp(a.length, b.length, alpha)
+                if (typeof a.speed === 'number' && typeof b.speed === 'number') sample.speed = lerp(a.speed, b.speed, alpha)
+                if (typeof a.angle === 'number' && typeof b.angle === 'number') sample.angle = lerpAngle(a.angle, b.angle, alpha)
+                if (typeof a.dir === 'number' && typeof b.dir === 'number') sample.dir = lerpAngle(a.dir, b.dir, alpha)
+            }
+            if (!sample.path) {
+                sample.path = (alpha > 0.5 ? b?.path : a?.path) || sample.path
+            }
+            if (id === youId) {
+                youPayload = sample
+            } else {
+                players.push(sample)
+            }
+        })
+        const prevFoods = snapshotFoodsToMap(prev)
+        const nextFoods = snapshotFoodsToMap(next)
+        const foodIds = new Set([...prevFoods.keys(), ...nextFoods.keys()])
+        const foods = []
+        foodIds.forEach((id) => {
+            const a = prevFoods.get(id)
+            const b = nextFoods.get(id)
+            const base = b || a
+            if (!base) return
+            const sample = { ...base }
+            if (a && b) {
+                if (typeof a.x === 'number' && typeof b.x === 'number') sample.x = lerp(a.x, b.x, alpha)
+                if (typeof a.y === 'number' && typeof b.y === 'number') sample.y = lerp(a.y, b.y, alpha)
+            }
+            foods.push(sample)
+        })
+        return {
+            type: next.type || prev.type || 'snapshot',
+            tick: typeof next.tick === 'number' && !Number.isNaN(next.tick)
+                ? next.tick
+                : prev.tick,
+            you: youPayload,
+            players,
+            foods,
+            leaderboard: next.leaderboard || prev.leaderboard
+        }
+    }
+
+    function snapshotPlayersToMap(snapshot) {
+        const map = new Map()
+        if (!snapshot) return map
+        if (Array.isArray(snapshot.players)) {
+            snapshot.players.forEach((p) => {
+                if (p && p.id) map.set(p.id, p)
+            })
+        }
+        if (snapshot.you && snapshot.you.id) {
+            map.set(snapshot.you.id, snapshot.you)
+        }
+        return map
+    }
+
+    function snapshotFoodsToMap(snapshot) {
+        const map = new Map()
+        if (!snapshot || !Array.isArray(snapshot.foods)) return map
+        snapshot.foods.forEach((f) => {
+            if (f && f.id) map.set(f.id, f)
+        })
+        return map
     }
 
     function randomFoodColor(seed) {
@@ -1753,6 +1955,7 @@
     }
 
     function update(dt) {
+        syncSnapshotBuffer()
         const smoothPos = Math.min(1, dt * POSITION_SMOOTH)
         const smoothAngle = Math.min(1, dt * ANGLE_SMOOTH)
         const now = performance.now()
