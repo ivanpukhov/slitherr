@@ -2,11 +2,16 @@
 <html lang="ru">
 <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
     <title>Slither Client</title>
     <style>
         :root {
             color-scheme: dark;
             font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+            --safe-top: env(safe-area-inset-top, 0px);
+            --safe-right: env(safe-area-inset-right, 0px);
+            --safe-bottom: env(safe-area-inset-bottom, 0px);
+            --safe-left: env(safe-area-inset-left, 0px);
         }
 
         * {
@@ -26,6 +31,8 @@
             display: block;
             width: 100vw;
             height: 100vh;
+            touch-action: none;
+            user-select: none;
         }
 
         .panel {
@@ -39,9 +46,10 @@
         }
 
         #scorePanel {
-            top: 24px;
-            left: 24px;
-            min-width: 180px;
+            top: calc(24px + var(--safe-top));
+            left: calc(24px + var(--safe-left));
+            min-width: clamp(160px, 24vw, 220px);
+            max-width: min(280px, 92vw);
         }
 
         #scorePanel .label {
@@ -53,22 +61,23 @@
 
         #scoreValue {
             margin-top: 6px;
-            font-size: 42px;
+            font-size: clamp(32px, 7vw, 48px);
             font-weight: 700;
             color: #f8fafc;
         }
 
         #scoreMeta {
             margin-top: 8px;
-            font-size: 13px;
+            font-size: clamp(12px, 2.8vw, 14px);
             font-weight: 500;
             color: #94a3b8;
+            line-height: 1.4;
         }
 
         #leaderboard {
-            top: 24px;
-            right: 24px;
-            width: 220px;
+            top: calc(24px + var(--safe-top));
+            right: calc(24px + var(--safe-right));
+            width: clamp(200px, 28vw, 240px);
         }
 
         #leaderboard .title {
@@ -117,9 +126,9 @@
 
         #minimapPanel {
             position: fixed;
-            bottom: 24px;
-            right: 24px;
-            width: 220px;
+            bottom: calc(24px + var(--safe-bottom));
+            right: calc(24px + var(--safe-right));
+            width: clamp(188px, 26vw, 240px);
             padding: 16px;
         }
 
@@ -134,8 +143,8 @@
 
         #minimapCanvas {
             display: block;
-            width: 188px;
-            height: 188px;
+            width: clamp(164px, 22vw, 188px);
+            height: clamp(164px, 22vw, 188px);
             border-radius: 16px;
             border: 1px solid rgba(59, 76, 103, 0.45);
             background: rgba(10, 16, 26, 0.65);
@@ -208,11 +217,17 @@
             cursor: pointer;
             box-shadow: 0 12px 30px rgba(34, 197, 94, 0.35);
             transition: transform 0.2s ease, box-shadow 0.2s ease;
+            touch-action: manipulation;
         }
 
         button.primary:hover {
             transform: translateY(-1px);
             box-shadow: 0 18px 38px rgba(34, 197, 94, 0.42);
+        }
+
+        button.primary:focus-visible {
+            outline: 3px solid rgba(94, 234, 212, 0.6);
+            outline-offset: 2px;
         }
 
         .skin-picker {
@@ -278,6 +293,113 @@
             box-shadow: 0 12px 24px rgba(148, 163, 184, 0.35);
         }
 
+        .touch-controls {
+            position: fixed;
+            left: calc(16px + var(--safe-left));
+            bottom: calc(16px + var(--safe-bottom));
+            display: none;
+            gap: 16px;
+            align-items: flex-end;
+            z-index: 8;
+            pointer-events: none;
+        }
+
+        .touch-controls.active {
+            display: flex;
+        }
+
+        .touch-controls > * {
+            pointer-events: auto;
+        }
+
+        .joystick {
+            position: relative;
+            width: clamp(120px, 30vw, 160px);
+            height: clamp(120px, 30vw, 160px);
+            border-radius: 999px;
+            background: rgba(8, 14, 24, 0.7);
+            border: 1px solid rgba(94, 117, 151, 0.28);
+            box-shadow: inset 0 18px 38px rgba(2, 6, 12, 0.55);
+            touch-action: none;
+        }
+
+        .joystick::before {
+            content: "";
+            position: absolute;
+            inset: 18%;
+            border-radius: 999px;
+            border: 1px solid rgba(59, 76, 103, 0.45);
+            background: radial-gradient(circle, rgba(59, 76, 103, 0.35), rgba(15, 23, 42, 0.65));
+        }
+
+        .joystick-handle {
+            position: absolute;
+            width: clamp(48px, 16vw, 64px);
+            height: clamp(48px, 16vw, 64px);
+            border-radius: 50%;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: linear-gradient(145deg, rgba(59, 130, 246, 0.85), rgba(29, 78, 216, 0.9));
+            border: 2px solid rgba(148, 163, 184, 0.4);
+            box-shadow: 0 14px 30px rgba(29, 78, 216, 0.45);
+            pointer-events: none;
+        }
+
+        .boost-button {
+            border: none;
+            border-radius: 999px;
+            padding: 18px 26px;
+            font-size: clamp(15px, 4vw, 18px);
+            font-weight: 700;
+            color: #020617;
+            background: linear-gradient(135deg, #fb923c, #f97316);
+            box-shadow: 0 18px 32px rgba(249, 115, 22, 0.35);
+            cursor: pointer;
+            touch-action: manipulation;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+        }
+
+        .boost-button:focus-visible {
+            outline: 3px solid rgba(251, 191, 36, 0.55);
+            outline-offset: 2px;
+        }
+
+        .boost-button.active {
+            transform: translateY(-2px);
+            box-shadow: 0 24px 42px rgba(249, 115, 22, 0.5);
+        }
+
+        .boost-button.disabled,
+        .boost-button:disabled {
+            cursor: default;
+            opacity: 0.5;
+            box-shadow: none;
+        }
+
+        body.is-touch #scorePanel {
+            top: calc(16px + var(--safe-top));
+            left: calc(16px + var(--safe-left));
+            bottom: auto;
+        }
+
+        body.is-touch #leaderboard {
+            top: calc(16px + var(--safe-top));
+            right: calc(16px + var(--safe-right));
+            bottom: auto;
+        }
+
+        body.is-touch #minimapPanel {
+            bottom: calc(16px + var(--safe-bottom));
+            right: calc(16px + var(--safe-right));
+            left: auto;
+            top: auto;
+        }
+
+        body.is-touch .touch-controls {
+            display: flex;
+        }
+
         #deathScreen .card {
             width: min(360px, 90vw);
         }
@@ -301,26 +423,52 @@
         }
 
         @media (max-width: 768px) {
-            #scorePanel,
-            #leaderboard {
+            body:not(.is-touch) #scorePanel,
+            body:not(.is-touch) #leaderboard {
                 top: auto;
-                bottom: 24px;
+                bottom: calc(24px + var(--safe-bottom));
+            }
+
+            body:not(.is-touch) #leaderboard {
+                right: calc(24px + var(--safe-right));
+            }
+
+            body:not(.is-touch) #scorePanel {
+                left: calc(24px + var(--safe-left));
+            }
+
+            body:not(.is-touch) #minimapPanel {
+                top: calc(24px + var(--safe-top));
+                bottom: auto;
+                right: calc(24px + var(--safe-right));
+                left: auto;
+                width: clamp(180px, 32vw, 220px);
+            }
+        }
+
+        @media (max-width: 540px) {
+            .panel {
+                padding: 14px 16px;
+                border-radius: 16px;
+            }
+
+            #leaderboard .title,
+            #scorePanel .label,
+            #minimapPanel .title {
+                font-size: 12px;
             }
 
             #leaderboard {
-                right: 24px;
+                width: clamp(180px, 40vw, 220px);
             }
 
-            #scorePanel {
-                left: 24px;
+            #minimapCanvas {
+                border-radius: 14px;
             }
 
-            #minimapPanel {
-                top: 24px;
-                bottom: auto;
-                right: 24px;
-                left: auto;
-                width: 200px;
+            body.is-touch #leaderboard,
+            body.is-touch #scorePanel {
+                width: clamp(170px, 48vw, 220px);
             }
         }
     </style>
@@ -340,10 +488,16 @@
     <div class="title">Карта</div>
     <canvas id="minimapCanvas" width="188" height="188"></canvas>
 </div>
+<div id="touchControls" class="touch-controls" aria-hidden="true">
+    <div id="joystick" class="joystick" role="application" aria-label="Виртуальный джойстик">
+        <div id="joystickHandle" class="joystick-handle"></div>
+    </div>
+    <button id="boostButton" class="boost-button" type="button" aria-pressed="false" aria-disabled="true" disabled>Ускорение</button>
+</div>
 <div id="nicknameScreen" class="overlay">
     <div class="card">
         <h2>Slither — онлайн арена</h2>
-        <p>Выберите никнейм и скин, чтобы начать игру. Управляйте мышкой, удерживайте кнопку, чтобы ускориться.</p>
+        <p>Выберите никнейм и скин, чтобы начать игру. На компьютере управляйте мышью и удерживайте её кнопку, чтобы ускориться. На смартфоне используйте виртуальный джойстик и кнопку ускорения.</p>
         <input id="nicknameInput" type="text" maxlength="16" placeholder="Ваш ник" autocomplete="off" />
         <div class="skin-picker">
             <div class="caption">
@@ -381,6 +535,10 @@
     const startBtn = document.getElementById('startBtn')
     const minimapCanvas = document.getElementById('minimapCanvas')
     const minimapCtx = minimapCanvas.getContext('2d')
+    const touchControls = document.getElementById('touchControls')
+    const joystick = document.getElementById('joystick')
+    const joystickHandle = document.getElementById('joystickHandle')
+    const boostButton = document.getElementById('boostButton')
 
     const SKINS = {
         default: ['#38bdf8'],
@@ -473,6 +631,74 @@
         })
     }
 
+    function getMeSnake() {
+        return state.meId ? state.snakes.get(state.meId) : null
+    }
+
+    function canBoost() {
+        const me = getMeSnake()
+        if (!me || !me.alive || !state.alive) return false
+        const min = state.limits.boostMinLength || state.limits.minLength || 0
+        return typeof me.length === 'number' && me.length > min + 1e-3
+    }
+
+    function refreshBoostState(force = false) {
+        const allowed = canBoost()
+        const active = allowed && state.boostIntent
+        state.boostActive = active
+        if ((force || allowed !== lastBoostAllowed || active !== lastBoostActive) && boostButton) {
+            boostButton.disabled = !allowed
+            boostButton.classList.toggle('disabled', !allowed)
+            boostButton.classList.toggle('active', active)
+            boostButton.setAttribute('aria-disabled', String(!allowed))
+            boostButton.setAttribute('aria-pressed', active ? 'true' : 'false')
+        }
+        lastBoostAllowed = allowed
+        lastBoostActive = active
+        return { allowed, active }
+    }
+
+    function setBoostIntent(active) {
+        const desired = Boolean(active)
+        if (state.boostIntent !== desired) {
+            state.boostIntent = desired
+            refreshBoostState()
+        } else if (!desired) {
+            refreshBoostState()
+        }
+    }
+
+    function resetBoostIntent() {
+        if (!state.boostIntent && !state.boostActive) {
+            refreshBoostState()
+            return
+        }
+        state.boostIntent = false
+        refreshBoostState()
+    }
+
+    function resetJoystickHandle() {
+        if (joystickHandle) {
+            joystickHandle.style.transform = 'translate(-50%, -50%)'
+        }
+    }
+
+    function updateJoystickPosition(clientX, clientY) {
+        if (!joystick || !joystickHandle) return
+        const rect = joystick.getBoundingClientRect()
+        const cx = rect.left + rect.width / 2
+        const cy = rect.top + rect.height / 2
+        const dx = clientX - cx
+        const dy = clientY - cy
+        const radius = rect.width / 2
+        const distance = Math.min(radius, Math.hypot(dx, dy))
+        const angle = Math.atan2(dy, dx)
+        const offsetX = Math.cos(angle) * distance
+        const offsetY = Math.sin(angle) * distance
+        joystickHandle.style.transform = `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px)`
+        state.pointerAngle = angle
+    }
+
 
     let ws = null
     const state = {
@@ -485,9 +711,37 @@
         world: null,
         camera: { x: 0, y: 0, targetX: 0, targetY: 0, zoom: CAMERA_ZOOM, initialized: false },
         pointerAngle: null,
-        pointerBoost: false,
+        boostIntent: false,
+        boostActive: false,
+        limits: { minLength: 0, baseLength: 0, boostMinLength: 0 },
         lastInputSent: 0,
         lastSnapshotAt: 0
+    }
+
+    const pointerMedia = window.matchMedia('(pointer: coarse)')
+    let touchControlsEnabled = false
+    let lastBoostAllowed = null
+    let lastBoostActive = null
+    let joystickActive = false
+
+    function setTouchControlsEnabled(enabled) {
+        touchControlsEnabled = Boolean(enabled)
+        document.body.classList.toggle('is-touch', touchControlsEnabled)
+        if (touchControls) {
+            touchControls.classList.toggle('active', touchControlsEnabled)
+            touchControls.setAttribute('aria-hidden', touchControlsEnabled ? 'false' : 'true')
+        }
+        resetJoystickHandle()
+        resetBoostIntent()
+        refreshBoostState(true)
+    }
+
+    const pointerChangeHandler = (event) => setTouchControlsEnabled(event.matches)
+    setTouchControlsEnabled(pointerMedia.matches)
+    if (typeof pointerMedia.addEventListener === 'function') {
+        pointerMedia.addEventListener('change', pointerChangeHandler)
+    } else if (typeof pointerMedia.addListener === 'function') {
+        pointerMedia.addListener(pointerChangeHandler)
     }
 
     buildSkinPicker()
@@ -629,6 +883,17 @@
                     }
                 }
                 state.camera.zoom = CAMERA_ZOOM
+                if (typeof message.minLength === 'number') {
+                    state.limits.minLength = message.minLength
+                    state.limits.boostMinLength = message.minLength
+                }
+                if (typeof message.baseLength === 'number') {
+                    state.limits.baseLength = message.baseLength
+                    if (!state.limits.boostMinLength) {
+                        state.limits.boostMinLength = message.baseLength
+                    }
+                }
+                refreshBoostState(true)
             }
             if (message.type === 'snapshot') {
                 state.lastSnapshotAt = performance.now()
@@ -638,6 +903,7 @@
                     renderLeaderboard()
                 }
                 applySnapshot(message)
+                refreshBoostState()
                 if (message.you && typeof message.you.length === 'number') {
                     updateHUD(Math.floor(message.you.length))
                 }
@@ -952,9 +1218,15 @@
     function updateHUD(score) {
         scoreValueEl.textContent = (score || 0).toLocaleString('ru-RU')
         const rank = getRank()
-        const meSnake = state.meId ? state.snakes.get(state.meId) : null
+        const meSnake = getMeSnake()
         const speed = meSnake && meSnake.speed ? Math.max(0, Math.round(meSnake.speed)) : null
-        scoreMetaEl.textContent = speed ? `Ранг: ${rank} · Скорость: ${speed}` : `Ранг: ${rank}`
+        const boostStatus = refreshBoostState()
+        const boostLabel = boostStatus.allowed
+            ? (boostStatus.active ? 'Буст: вкл.' : 'Буст: готов')
+            : 'Буст: нет'
+        scoreMetaEl.textContent = speed
+            ? `Ранг: ${rank} · Скорость: ${speed} · ${boostLabel}`
+            : `Ранг: ${rank} · ${boostLabel}`
     }
 
     function getRank() {
@@ -985,6 +1257,7 @@
 
     function showDeath(message) {
         state.alive = false
+        resetBoostIntent()
         const killerName = message && message.killerName ? message.killerName : 'неизвестный'
         const score = message && typeof message.yourScore === 'number' ? message.yourScore : 0
         deathSummary.textContent = `Вас победил ${killerName}`
@@ -1425,7 +1698,8 @@
 
     function sendInput() {
         if (!ws || ws.readyState !== WebSocket.OPEN || !state.alive) return
-        const payload = { type: 'input', boost: state.pointerBoost }
+        const boostStatus = refreshBoostState()
+        const payload = { type: 'input', boost: boostStatus.active }
         if (typeof state.pointerAngle === 'number' && !Number.isNaN(state.pointerAngle)) {
             payload.angle = state.pointerAngle
         }
@@ -1433,6 +1707,21 @@
     }
 
     setInterval(sendInput, 30)
+
+    function isEditableTarget(target) {
+        if (!target) return false
+        if (target.isContentEditable) return true
+        const tag = target.tagName ? target.tagName.toUpperCase() : ''
+        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON'
+    }
+
+    function updatePointerFromTouch(touch) {
+        if (!touch) return
+        const rect = canvas.getBoundingClientRect()
+        const cx = rect.left + rect.width / 2
+        const cy = rect.top + rect.height / 2
+        state.pointerAngle = Math.atan2(touch.clientY - cy, touch.clientX - cx)
+    }
 
     document.addEventListener('mousemove', (event) => {
         const rect = canvas.getBoundingClientRect()
@@ -1450,28 +1739,120 @@
         }
     })
 
-    document.addEventListener('mousedown', () => {
-        state.pointerBoost = true
+    document.addEventListener('mousedown', (event) => {
+        if (event.button !== 0) return
+        if (isEditableTarget(event.target)) return
+        if (event.target && event.target.closest('.touch-controls')) return
+        setBoostIntent(true)
     })
 
     document.addEventListener('mouseup', () => {
-        state.pointerBoost = false
+        resetBoostIntent()
     })
 
-    canvas.addEventListener('touchmove', (event) => {
+    window.addEventListener('blur', () => {
+        resetBoostIntent()
+        joystickActive = false
+        resetJoystickHandle()
+    })
+
+    canvas.addEventListener('touchstart', (event) => {
+        if (touchControlsEnabled) return
         if (!event.touches || !event.touches.length) return
-        const touch = event.touches[0]
-        const rect = canvas.getBoundingClientRect()
-        const cx = rect.left + rect.width / 2
-        const cy = rect.top + rect.height / 2
-        state.pointerAngle = Math.atan2(touch.clientY - cy, touch.clientX - cx)
-        state.pointerBoost = event.touches.length > 1
+        updatePointerFromTouch(event.touches[0])
+        setBoostIntent(event.touches.length > 1)
+        event.preventDefault()
+    }, { passive: false })
+
+    canvas.addEventListener('touchmove', (event) => {
+        if (touchControlsEnabled) return
+        if (!event.touches || !event.touches.length) return
+        updatePointerFromTouch(event.touches[0])
+        setBoostIntent(event.touches.length > 1)
         event.preventDefault()
     }, { passive: false })
 
     canvas.addEventListener('touchend', (event) => {
+        if (touchControlsEnabled) return
         if (!event.touches || event.touches.length === 0) {
-            state.pointerBoost = false
+            resetBoostIntent()
+        } else {
+            setBoostIntent(event.touches.length > 1)
+        }
+    })
+
+    canvas.addEventListener('touchcancel', () => {
+        if (touchControlsEnabled) return
+        resetBoostIntent()
+    })
+
+    if (joystick) {
+        joystick.addEventListener('pointerdown', (event) => {
+            if (!touchControlsEnabled) return
+            joystickActive = true
+            if (typeof joystick.setPointerCapture === 'function') {
+                try { joystick.setPointerCapture(event.pointerId) } catch (err) { /* ignore */ }
+            }
+            updateJoystickPosition(event.clientX, event.clientY)
+            event.preventDefault()
+        })
+
+        joystick.addEventListener('pointermove', (event) => {
+            if (!joystickActive) return
+            updateJoystickPosition(event.clientX, event.clientY)
+            event.preventDefault()
+        })
+
+        const finishJoystick = () => {
+            joystickActive = false
+            resetJoystickHandle()
+        }
+
+        joystick.addEventListener('pointerup', finishJoystick)
+        joystick.addEventListener('pointercancel', finishJoystick)
+        joystick.addEventListener('lostpointercapture', finishJoystick)
+    }
+
+    if (boostButton) {
+        const startBoost = (event) => {
+            event.preventDefault()
+            if (boostButton.disabled) return
+            setBoostIntent(true)
+        }
+        const stopBoost = (event) => {
+            event.preventDefault()
+            resetBoostIntent()
+        }
+        boostButton.addEventListener('pointerdown', startBoost)
+        boostButton.addEventListener('pointerup', stopBoost)
+        boostButton.addEventListener('pointerleave', stopBoost)
+        boostButton.addEventListener('pointercancel', stopBoost)
+        boostButton.addEventListener('keydown', (event) => {
+            if (event.code === 'Space' || event.key === ' ' || event.key === 'Enter') {
+                event.preventDefault()
+                setBoostIntent(true)
+            }
+        })
+        boostButton.addEventListener('keyup', (event) => {
+            if (event.code === 'Space' || event.key === ' ' || event.key === 'Enter') {
+                event.preventDefault()
+                resetBoostIntent()
+            }
+        })
+    }
+
+    window.addEventListener('keydown', (event) => {
+        if (event.repeat) return
+        if (event.code === 'Space') {
+            if (isEditableTarget(event.target)) return
+            event.preventDefault()
+            setBoostIntent(true)
+        }
+    })
+
+    window.addEventListener('keyup', (event) => {
+        if (event.code === 'Space') {
+            resetBoostIntent()
         }
     })
 
