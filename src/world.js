@@ -463,7 +463,8 @@ class World {
         this.playerCells.delete(victim.id)
 
         if (killer && bounty > 0) {
-            killer.balance = Math.max(0, killer.balance || 0) + bounty
+            const killerBet = Math.max(0, Math.floor(killer.currentBet || 0))
+            killer.currentBet = killerBet + bounty
             this.notifyBalance(killer)
         }
         this.notifyBalance(victim)

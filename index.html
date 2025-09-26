@@ -107,17 +107,37 @@
             color: #f8fafc;
         }
 
+        #cashoutControl {
+            position: fixed;
+            left: 50%;
+            bottom: calc(100px + var(--safe-bottom));
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            z-index: 9;
+            pointer-events: none;
+        }
+
+        @media (max-height: 700px) {
+            #cashoutControl {
+                bottom: calc(70px + var(--safe-bottom));
+            }
+        }
+
         .cashout-button {
             border: none;
-            border-radius: 14px;
-            padding: 12px 14px;
+            border-radius: 999px;
+            padding: 10px 18px;
             font-size: clamp(12px, 2.8vw, 14px);
             font-weight: 600;
             color: #0f172a;
             background: linear-gradient(135deg, #fbbf24, #f97316);
             cursor: pointer;
             transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.2s ease;
-            box-shadow: 0 16px 30px rgba(249, 115, 22, 0.35);
+            box-shadow: 0 12px 24px rgba(249, 115, 22, 0.35);
+            pointer-events: auto;
         }
 
         .cashout-button:disabled,
@@ -128,8 +148,8 @@
         }
 
         .cashout-button.holding {
-            transform: translateY(-1px) scale(0.99);
-            box-shadow: 0 18px 36px rgba(249, 115, 22, 0.4);
+            transform: translateY(1px) scale(0.99);
+            box-shadow: 0 14px 28px rgba(249, 115, 22, 0.4);
         }
 
         .cashout-hint {
@@ -622,8 +642,6 @@
             <span class="account-label">Ставка</span>
             <span class="account-value" id="betValue">0</span>
         </div>
-        <button id="cashoutButton" class="cashout-button" type="button" disabled aria-disabled="true">Удерживайте 3 секунды для вывода</button>
-        <div id="cashoutHint" class="cashout-hint">или зажмите клавишу Q</div>
     </div>
 </div>
 <div id="leaderboard" class="panel">
@@ -639,6 +657,10 @@
         <div id="joystickHandle" class="joystick-handle"></div>
     </div>
     <button id="boostButton" class="boost-button" type="button" aria-pressed="false" aria-disabled="true" disabled>Ускорение</button>
+</div>
+<div id="cashoutControl">
+    <button id="cashoutButton" class="cashout-button" type="button" disabled aria-disabled="true">Вывод</button>
+    <div id="cashoutHint" class="cashout-hint">Удерживайте кнопку 2 секунды или нажмите Q</div>
 </div>
 <div id="nicknameScreen" class="overlay">
     <div class="card">
@@ -746,7 +768,7 @@
     const SEGMENT_SPACING = 6
     const LENGTH_EPS = 1e-3
     const MINIMAP_SIZE = 188
-    const CASHOUT_HOLD_MS = 3000
+    const CASHOUT_HOLD_MS = 2000
 
     let cashoutHoldStart = null
     let cashoutHoldFrame = null
@@ -853,14 +875,15 @@
         const canCashOut = !state.account.cashedOut && !cashoutPending && total > 0 && ws && ws.readyState === WebSocket.OPEN
 
         if (cashoutButton) {
+            const isHolding = cashoutHoldStart !== null && !cashoutHoldTriggered && !cashoutPending
             cashoutButton.disabled = !canCashOut
             cashoutButton.setAttribute('aria-disabled', canCashOut ? 'false' : 'true')
             if (!state.account.cashedOut) {
                 if (cashoutPending) {
                     cashoutButton.textContent = 'Запрос вывода...'
                     cashoutButton.classList.remove('holding')
-                } else if (!canCashOut) {
-                    cashoutButton.textContent = 'Удерживайте 3 секунды для вывода'
+                } else if (!isHolding) {
+                    cashoutButton.textContent = 'Вывод'
                     cashoutButton.classList.remove('holding')
                 }
             }
@@ -870,7 +893,7 @@
                 ? 'Баланс зафиксирован'
                 : cashoutPending
                     ? 'Запрос обрабатывается'
-                    : 'или зажмите клавишу Q'
+                    : 'Удерживайте кнопку 2 секунды или нажмите Q'
             cashoutHint.style.opacity = canCashOut ? '0.85' : '0.5'
         }
     }
@@ -896,7 +919,7 @@
         if (cashoutButton) {
             cashoutButton.classList.remove('holding')
             if (!state.account.cashedOut && !options.preserveLabel) {
-                cashoutButton.textContent = 'Удерживайте 3 секунды для вывода'
+                cashoutButton.textContent = 'Вывод'
             }
         }
     }
