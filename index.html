@@ -778,7 +778,11 @@
 
     function rebuildPath(points, headX, headY, length, angle) {
         const result = []
-        const tail = points.slice(-Math.min(points.length, 400))
+        const sourcePoints = Array.isArray(points) ? points : []
+        const targetLength = Math.max(typeof length === 'number' ? length : 0, SEGMENT_SPACING * 2)
+        const maxPoints = Math.max(2, 1 + Math.ceil(targetLength / SEGMENT_SPACING))
+        const sampleWindow = Math.min(sourcePoints.length, Math.max(400, maxPoints + 12))
+        const tail = sourcePoints.slice(-sampleWindow)
         for (let i = 0; i < tail.length; i++) {
             const pt = tail[i]
             if (typeof pt.x === 'number' && typeof pt.y === 'number') {
@@ -797,8 +801,6 @@
             })
         }
         let resampled = resamplePath(result, SEGMENT_SPACING)
-        const targetLength = Math.max(typeof length === 'number' ? length : 0, SEGMENT_SPACING * 2)
-        const maxPoints = Math.max(2, 1 + Math.ceil(targetLength / SEGMENT_SPACING))
         if (resampled.length > maxPoints) {
             resampled = resampled.slice(resampled.length - maxPoints)
         }
