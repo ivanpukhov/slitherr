@@ -961,27 +961,27 @@
 
     function extendPathFront(points, amount, spacing) {
         if (!Array.isArray(points) || points.length < 2) return
-        let remaining = amount
-        const step = Math.max(spacing || SEGMENT_SPACING, SEGMENT_SPACING * 0.5)
-        let guard = 0
-        while (remaining > LENGTH_EPS && points.length > 1 && guard++ < 64) {
-            normalizePathStart(points)
-            if (points.length <= 1) break
-            const first = points[0]
-            const second = points[1]
-            const dx = first.x - second.x
-            const dy = first.y - second.y
-            const segLen = Math.hypot(dx, dy)
-            if (segLen <= LENGTH_EPS) break
-            const extend = Math.min(remaining, step)
-            const ux = dx / segLen
-            const uy = dy / segLen
-            points.unshift({
-                x: first.x + ux * extend,
-                y: first.y + uy * extend
-            })
-            remaining -= extend
-        }
+        if (!Number.isFinite(amount) || amount <= LENGTH_EPS) return
+
+        // берём два первых (хвостовые) пункта и экстраполируем один новый
+        normalizePathStart(points)
+        if (points.length < 2) return
+
+        const first = points[0]
+        const second = points[1]
+        const dx = first.x - second.x
+        const dy = first.y - second.y
+        const segLen = Math.hypot(dx, dy)
+        if (segLen <= LENGTH_EPS) return
+
+        const ux = dx / segLen
+        const uy = dy / segLen
+        // не делаем много мелких вставок — один аккуратный префикс
+        const toAdd = Math.min(amount, Math.max(spacing || SEGMENT_SPACING, amount))
+        points.unshift({
+            x: first.x + ux * toAdd,
+            y: first.y + uy * toAdd
+        })
     }
 
     function fitPathLength(points, targetLength, spacing) {
@@ -1103,9 +1103,28 @@
                 } else if (typeof snake.serverAngle === 'number') {
                     snake.targetAngle = snake.serverAngle
                 }
+                // плавно двигаем последний (головной) узел пути к предсказанной позиции,
+// чтобы не было резких замен и коротких прямых отрезков
                 if (snake.renderPath && snake.renderPath.length) {
-                    snake.renderPath[snake.renderPath.length - 1] = { x: predictedX, y: predictedY }
+                    const lastIdx = snake.renderPath.length - 1
+                    const last = snake.renderPath[lastIdx]
+                    if (last) {
+                        const dx = predictedX - last.x
+                        const dy = predictedY - last.y
+                        const dist = Math.hypot(dx, dy)
+                        const maxStep = Math.max(SEGMENT_SPACING * 1.05, 8) // ограничение максимального «скачка»
+                        if (dist > maxStep) {
+                            const t = maxStep / dist
+                            last.x = last.x + dx * t
+                            last.y = last.y + dy * t
+                        } else {
+                            // небольшая интерполяция до предсказанной позиции
+                            last.x = lerp(last.x, predictedX, 0.72)
+                            last.y = lerp(last.y, predictedY, 0.72)
+                        }
+                    }
                 }
+
             }
             if (snake.renderPath && snake.renderPath.length > 1) {
                 const desiredLength = Math.max(SEGMENT_SPACING * 2, snake.length || snake.displayLength || 0)

@@ -48,3 +48,9 @@
 {"killer":"e83d9e77-790d-4b30-b19b-6e0d126a7413","victim":"64ca3e17-e349-46e9-816b-2c29ff1bdac9","x":3766.711105077029,"y":1098.1857726279604,"tick":138116,"victimLength":790,"killerLength":32,"reason":"head_vs_body"}
 {"killer":"e83d9e77-790d-4b30-b19b-6e0d126a7413","victim":"095e885c-fb1e-409e-a1f1-dc5d34e62789","x":879.3334853268934,"y":1531.1982852481008,"tick":147631,"victimLength":64,"killerLength":974,"reason":"head_vs_body"}
 {"killer":"238f5b2b-29f7-4062-97db-23cdfd9aa2e3","victim":"44167f98-2c29-4d57-a672-48945cefe203","x":2812.0592378934716,"y":3816.963677781056,"tick":156015,"victimLength":37,"killerLength":30,"reason":"head_vs_body"}
+{"killer":"88821744-2792-4d79-a00d-63794a269aa5","victim":"6753b949-b901-4488-afc2-2a4db5aa14b1","x":2674.5370284409205,"y":127.21226792104653,"tick":3082,"victimLength":23,"killerLength":93,"reason":"head_vs_body"}
+{"killer":"8c93edc6-6733-474b-a94f-4e01ac64245b","victim":"88821744-2792-4d79-a00d-63794a269aa5","x":3738.7494129991583,"y":1037.7199164952833,"tick":11355,"victimLength":248,"killerLength":29,"reason":"head_vs_body"}
+{"killer":"a06475f0-c0e7-4271-aa8f-225a4498a1cb","victim":"8c93edc6-6733-474b-a94f-4e01ac64245b","x":2112.9900196897324,"y":16.446221706798724,"tick":15537,"victimLength":304,"killerLength":35,"reason":"head_vs_body"}
+{"killer":"d1330c71-be31-4508-946c-56bcf7fa5618","victim":"a06475f0-c0e7-4271-aa8f-225a4498a1cb","x":3166.9790742926125,"y":392.59945978759583,"tick":25202,"victimLength":355,"killerLength":37,"reason":"head_vs_body"}
+{"killer":"553f0069-b6f1-4ce7-b481-dcc30f167f2b","victim":"d1330c71-be31-4508-946c-56bcf7fa5618","x":2604.60471093172,"y":108.3403514575798,"tick":29386,"victimLength":409,"killerLength":25,"reason":"head_vs_body"}
+{"killer":"7c08e913-5625-424b-8b4a-4fc31ffc8dbb","victim":"553f0069-b6f1-4ce7-b481-dcc30f167f2b","x":783.6749237070819,"y":1849.8328351007654,"tick":33214,"victimLength":485,"killerLength":27,"reason":"head_vs_body"}
