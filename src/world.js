@@ -232,7 +232,10 @@ class World {
                 p.targetAngle = desired
             }
         }
-        if (typeof data.boost === 'boolean') p.boost = data.boost
+        if (typeof data.boost === 'boolean') {
+            const canBoost = p.length > this.cfg.minLength + 1e-6
+            p.boost = data.boost && canBoost
+        }
     }
 
     stepMovement(dt) {
@@ -334,6 +337,10 @@ class World {
                     const tx = p.path.length > 3 ? p.path[0].x : p.x
                     const ty = p.path.length > 3 ? p.path[0].y : p.y
                     this.spawnFoodAt(tx, ty, 1, { palette: this.skinPalette(p.skin) })
+                }
+
+                if (p.length <= this.cfg.minLength + 1e-3) {
+                    p.boost = false
                 }
             }
 

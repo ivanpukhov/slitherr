@@ -112,7 +112,9 @@ wss.on('connection', (ws) => {
                 id: p.id,
                 width: cfg.width,
                 height: cfg.height,
-                radius: world.radius
+                radius: world.radius,
+                minLength: cfg.minLength,
+                baseLength: cfg.baseLength
             })
             return
         }
