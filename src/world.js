@@ -2,6 +2,12 @@
 const { SpatialHash } = require('./spatial')
 const { v4: randomUUID } = require('uuid')
 
+const {
+    MSG_BALANCE,
+    MSG_CASHOUT_CONFIRMED,
+    encode
+} = require('./protocol')
+
 const SKIN_PRESETS = {
     default: ['#38bdf8'],
     emerald: ['#34d399'],
@@ -140,7 +146,31 @@ class World {
             ? cfg.maxTurnRate
             : cfg.maxTurn * cfg.tickRate
 
+        this.initialBalance = 1000
+
         for (let i = 0; i < cfg.initialFood; i++) this.spawnFood()
+    }
+
+    send(ws, payload) {
+        if (!ws || ws.readyState !== 1) return
+        try {
+            ws.send(encode(payload))
+        } catch (err) {
+            // ignore send errors
+        }
+    }
+
+    notifyBalance(p) {
+        if (!p || !p.ws) return
+        const balance = Math.max(0, Math.floor(p.balance || 0))
+        const currentBet = Math.max(0, Math.floor(p.currentBet || 0))
+        const total = balance + currentBet
+        this.send(p.ws, {
+            type: MSG_BALANCE,
+            balance,
+            currentBet,
+            total
+        })
     }
 
     skinPalette(skin) {
@@ -189,7 +219,10 @@ class World {
             lastInputTs: 0,
             msgCountWindow: 0,
             lastMsgWindowTs: Date.now(),
-            r: this.cfg.headRadius
+            r: this.cfg.headRadius,
+            balance: this.initialBalance,
+            currentBet: 0,
+            cashedOut: false
         }
         p.dir = p.angle
         p.targetAngle = p.angle
@@ -208,11 +241,13 @@ class World {
     }
 
     respawn(p) {
+        if (!p || p.cashedOut || p.alive) return
         const spawn = randomPointInCircle(this.centerX, this.centerY, this.radius * 0.95)
         p.x = spawn.x
         p.y = spawn.y
         p.angle = rnd(0, Math.PI * 2)
         p.targetAngle = p.angle
+        p.dir = p.angle
         p.length = this.cfg.baseLength
         p.alive = true
         p.boost = false
@@ -220,9 +255,12 @@ class World {
         p.pathLen = 0
         p.pathCarry = 0
         p.r = this.cfg.headRadius
+        const key = this.playerSpatial.add(p.id, p.x, p.y)
+        this.playerCells.set(p.id, key)
     }
 
     handleInput(p, data) {
+        if (!p || !p.alive || p.cashedOut) return
         const now = Date.now()
         if (now - p.lastInputTs < this.cfg.inputMinIntervalMs) return
         p.lastInputTs = now
@@ -417,6 +455,19 @@ class World {
         victim.pathLen = 0
         victim.pathCarry = 0
 
+        const bounty = Math.max(0, Math.floor(victim.currentBet || 0))
+        victim.currentBet = 0
+
+        const cellKey = this.playerCells.get(victim.id)
+        this.playerSpatial.removeKey(victim.id, cellKey)
+        this.playerCells.delete(victim.id)
+
+        if (killer && bounty > 0) {
+            killer.balance = Math.max(0, killer.balance || 0) + bounty
+            this.notifyBalance(killer)
+        }
+        this.notifyBalance(victim)
+
         const totalValue = Math.max(1, Math.floor(victim.length))
         const palette = this.skinPalette(victim.skin)
         const anchors = dropPath.length ? dropPath : [{ x: victim.x, y: victim.y }]
@@ -457,16 +508,80 @@ class World {
             tick: this.tickId,
             victimLength: Math.floor(victim.length),
             killerLength: killer ? Math.floor(killer.length) : 0,
-            reason: 'head_vs_body'
+            reason: 'head_vs_body',
+            bounty
         })
 
         if (victim.ws && victim.ws.readyState === 1) {
-            victim.ws.send(JSON.stringify({
+            this.send(victim.ws, {
                 type: "death",
                 killerName: killer ? killer.name : "",
                 yourScore: Math.floor(victim.length)
-            }))
+            })
         }
+    }
+
+    placeBet(p, amount) {
+        if (!p || p.cashedOut) {
+            return { ok: false, error: 'cashout' }
+        }
+        const raw = Number(amount)
+        if (!Number.isFinite(raw)) {
+            return { ok: false, error: 'invalid_amount' }
+        }
+        const bet = Math.floor(raw)
+        if (bet <= 0) {
+            return { ok: false, error: 'invalid_amount' }
+        }
+        if (p.currentBet > 0) {
+            return { ok: false, error: 'bet_exists' }
+        }
+        const balance = Math.max(0, Math.floor(p.balance || 0))
+        const finalBet = Math.min(bet, balance)
+        if (finalBet <= 0) {
+            return { ok: false, error: 'insufficient_balance' }
+        }
+        p.balance = balance - finalBet
+        p.currentBet = finalBet
+        this.notifyBalance(p)
+        return {
+            ok: true,
+            balance: Math.max(0, Math.floor(p.balance)),
+            currentBet: Math.max(0, Math.floor(p.currentBet)),
+            total: Math.max(0, Math.floor(p.balance + p.currentBet))
+        }
+    }
+
+    cashOut(p) {
+        if (!p || p.cashedOut) {
+            return { ok: false, error: 'cashout' }
+        }
+        const refund = Math.max(0, Math.floor(p.currentBet || 0))
+        if (refund > 0) {
+            p.balance = Math.max(0, Math.floor(p.balance || 0)) + refund
+        } else {
+            p.balance = Math.max(0, Math.floor(p.balance || 0))
+        }
+        p.currentBet = 0
+        p.cashedOut = true
+        p.alive = false
+        p.boost = false
+        p.path = []
+        p.pathLen = 0
+        p.pathCarry = 0
+        const cellKey = this.playerCells.get(p.id)
+        this.playerSpatial.removeKey(p.id, cellKey)
+        this.playerCells.delete(p.id)
+        this.players.delete(p.id)
+        this.notifyBalance(p)
+        const finalBalance = Math.max(0, Math.floor(p.balance))
+        if (p.ws) {
+            this.send(p.ws, {
+                type: MSG_CASHOUT_CONFIRMED,
+                balance: finalBalance
+            })
+        }
+        return { ok: true, balance: finalBalance }
     }
 
     tick(dt) {

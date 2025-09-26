@@ -74,6 +74,70 @@
             line-height: 1.4;
         }
 
+        #scorePanel .account {
+            margin-top: 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .account-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: clamp(13px, 3vw, 15px);
+            font-weight: 600;
+            color: #e2e8f0;
+            background: rgba(12, 19, 31, 0.55);
+            padding: 8px 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(59, 76, 103, 0.38);
+        }
+
+        .account-row .account-label {
+            color: rgba(148, 163, 184, 0.82);
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .account-row .account-value {
+            font-size: clamp(15px, 3.4vw, 18px);
+            font-weight: 700;
+            color: #f8fafc;
+        }
+
+        .cashout-button {
+            border: none;
+            border-radius: 14px;
+            padding: 12px 14px;
+            font-size: clamp(12px, 2.8vw, 14px);
+            font-weight: 600;
+            color: #0f172a;
+            background: linear-gradient(135deg, #fbbf24, #f97316);
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.2s ease;
+            box-shadow: 0 16px 30px rgba(249, 115, 22, 0.35);
+        }
+
+        .cashout-button:disabled,
+        .cashout-button[aria-disabled="true"] {
+            cursor: default;
+            opacity: 0.45;
+            box-shadow: none;
+        }
+
+        .cashout-button.holding {
+            transform: translateY(-1px) scale(0.99);
+            box-shadow: 0 18px 36px rgba(249, 115, 22, 0.4);
+        }
+
+        .cashout-hint {
+            font-size: clamp(11px, 2.6vw, 13px);
+            color: rgba(148, 163, 184, 0.75);
+            text-align: center;
+        }
+
         #leaderboard {
             top: calc(24px + var(--safe-top));
             right: calc(24px + var(--safe-right));
@@ -232,6 +296,46 @@
 
         .skin-picker {
             margin-bottom: 22px;
+        }
+
+        .bet-control {
+            margin-bottom: 22px;
+            text-align: left;
+        }
+
+        .bet-control label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            color: rgba(148, 163, 184, 0.75);
+            margin-bottom: 8px;
+        }
+
+        .bet-control input[type="number"] {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid rgba(59, 76, 103, 0.5);
+            background: rgba(10, 18, 30, 0.9);
+            color: #e2e8f0;
+            font-size: 16px;
+            font-weight: 600;
+            outline: none;
+            appearance: textfield;
+        }
+
+        .bet-control input[type="number"]::-webkit-outer-spin-button,
+        .bet-control input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        .bet-control .bet-hint {
+            margin-top: 6px;
+            font-size: 13px;
+            color: rgba(148, 163, 184, 0.78);
         }
 
         .skin-picker .caption {
@@ -418,8 +522,38 @@
             margin-bottom: 24px;
         }
 
+        #deathScreen .death-balance {
+            font-size: 16px;
+            font-weight: 500;
+            color: #cbd5f5;
+            margin-bottom: 18px;
+        }
+
+        #deathScreen .bet-control {
+            margin-bottom: 16px;
+        }
+
+        #deathScreen .bet-control input[type="number"] {
+            background: rgba(11, 18, 30, 0.92);
+        }
+
+        #deathScreen .bet-control .bet-hint {
+            color: rgba(148, 163, 184, 0.82);
+        }
+
         #deathScreen button {
             margin-top: 6px;
+        }
+
+        #cashoutScreen .card {
+            width: min(360px, 90vw);
+        }
+
+        #cashoutScreen .summary {
+            font-size: 18px;
+            font-weight: 600;
+            color: #e2e8f0;
+            margin-bottom: 18px;
         }
 
         @media (max-width: 768px) {
@@ -479,6 +613,18 @@
     <div class="label">Длина</div>
     <div id="scoreValue">0</div>
     <div id="scoreMeta">Ранг: —</div>
+    <div class="account">
+        <div class="account-row">
+            <span class="account-label">Баланс</span>
+            <span class="account-value" id="balanceValue">0</span>
+        </div>
+        <div class="account-row">
+            <span class="account-label">Ставка</span>
+            <span class="account-value" id="betValue">0</span>
+        </div>
+        <button id="cashoutButton" class="cashout-button" type="button" disabled aria-disabled="true">Удерживайте 3 секунды для вывода</button>
+        <div id="cashoutHint" class="cashout-hint">или зажмите клавишу Q</div>
+    </div>
 </div>
 <div id="leaderboard" class="panel">
     <div class="title">Лидеры</div>
@@ -506,6 +652,11 @@
             </div>
             <div id="skinList" class="skin-list"></div>
         </div>
+        <div class="bet-control">
+            <label for="betInput">Ставка перед стартом</label>
+            <input id="betInput" type="number" min="1" step="1" value="10" />
+            <div class="bet-hint">Доступно: <span id="betBalanceDisplay">1 000</span></div>
+        </div>
         <button id="startBtn" class="primary">Играть</button>
     </div>
 </div>
@@ -513,7 +664,20 @@
     <div class="card">
         <div class="summary" id="deathSummary"></div>
         <div class="score" id="deathScore"></div>
+        <div class="death-balance" id="deathBalance"></div>
+        <div class="bet-control" id="deathBetControl">
+            <label for="retryBetInput">Новая ставка</label>
+            <input id="retryBetInput" type="number" min="1" step="1" />
+            <div class="bet-hint">Доступно: <span id="deathBetBalance">0</span></div>
+        </div>
         <button class="primary" id="retryBtn">Играть снова</button>
+    </div>
+</div>
+<div id="cashoutScreen" class="overlay hidden">
+    <div class="card">
+        <div class="summary" id="cashoutTitle">Баланс выведен</div>
+        <div class="summary" id="cashoutSummary"></div>
+        <button class="primary" id="cashoutCloseBtn">Готово</button>
     </div>
 </div>
 <script>
@@ -527,9 +691,22 @@
     const deathScreen = document.getElementById('deathScreen')
     const deathSummary = document.getElementById('deathSummary')
     const deathScore = document.getElementById('deathScore')
+    const deathBalanceEl = document.getElementById('deathBalance')
+    const deathBetControl = document.getElementById('deathBetControl')
+    const deathBetBalanceEl = document.getElementById('deathBetBalance')
+    const retryBetInput = document.getElementById('retryBetInput')
     const retryBtn = document.getElementById('retryBtn')
     const nicknameScreen = document.getElementById('nicknameScreen')
     const nicknameInput = document.getElementById('nicknameInput')
+    const betInput = document.getElementById('betInput')
+    const betBalanceDisplay = document.getElementById('betBalanceDisplay')
+    const balanceValueEl = document.getElementById('balanceValue')
+    const betValueEl = document.getElementById('betValue')
+    const cashoutButton = document.getElementById('cashoutButton')
+    const cashoutHint = document.getElementById('cashoutHint')
+    const cashoutScreen = document.getElementById('cashoutScreen')
+    const cashoutSummary = document.getElementById('cashoutSummary')
+    const cashoutCloseBtn = document.getElementById('cashoutCloseBtn')
     const skinList = document.getElementById('skinList')
     const skinName = document.getElementById('skinName')
     const startBtn = document.getElementById('startBtn')
@@ -569,6 +746,13 @@
     const SEGMENT_SPACING = 6
     const LENGTH_EPS = 1e-3
     const MINIMAP_SIZE = 188
+    const CASHOUT_HOLD_MS = 3000
+
+    let cashoutHoldStart = null
+    let cashoutHoldFrame = null
+    let cashoutHoldTriggered = false
+    let cashoutHoldSource = null
+    let cashoutPending = false
 
     function setCanvasSize() {
         const width = window.innerWidth
@@ -629,6 +813,134 @@
         Array.from(skinList.children).forEach((child) => {
             child.classList.toggle('selected', child.dataset.skin === selectedSkin)
         })
+    }
+
+    function formatNumber(value) {
+        const safe = Math.max(0, Math.floor(Number.isFinite(value) ? value : 0))
+        return safe.toLocaleString('ru-RU')
+    }
+
+    function getTotalBalance() {
+        const balance = Math.max(0, state.account.balance || 0)
+        const bet = Math.max(0, state.account.currentBet || 0)
+        return Math.max(0, state.account.total || balance + bet)
+    }
+
+    function applyBalanceUpdate(payload) {
+        if (!payload) return
+        if (typeof payload.balance === 'number') state.account.balance = Math.max(0, Math.floor(payload.balance))
+        if (typeof payload.currentBet === 'number') state.account.currentBet = Math.max(0, Math.floor(payload.currentBet))
+        if (typeof payload.total === 'number') {
+            state.account.total = Math.max(0, Math.floor(payload.total))
+        } else {
+            state.account.total = Math.max(0, state.account.balance + state.account.currentBet)
+        }
+        if (typeof payload.cashedOut === 'boolean') {
+            state.account.cashedOut = payload.cashedOut
+            if (payload.cashedOut) {
+                cashoutPending = false
+            }
+        }
+        updateBalanceHUD()
+    }
+
+    function updateBalanceHUD() {
+        if (balanceValueEl) balanceValueEl.textContent = formatNumber(state.account.balance)
+        if (betValueEl) betValueEl.textContent = formatNumber(state.account.currentBet)
+        if (betBalanceDisplay) betBalanceDisplay.textContent = formatNumber(state.account.balance)
+
+        const total = getTotalBalance()
+        const canCashOut = !state.account.cashedOut && !cashoutPending && total > 0 && ws && ws.readyState === WebSocket.OPEN
+
+        if (cashoutButton) {
+            cashoutButton.disabled = !canCashOut
+            cashoutButton.setAttribute('aria-disabled', canCashOut ? 'false' : 'true')
+            if (!state.account.cashedOut) {
+                if (cashoutPending) {
+                    cashoutButton.textContent = 'Запрос вывода...'
+                    cashoutButton.classList.remove('holding')
+                } else if (!canCashOut) {
+                    cashoutButton.textContent = 'Удерживайте 3 секунды для вывода'
+                    cashoutButton.classList.remove('holding')
+                }
+            }
+        }
+        if (cashoutHint) {
+            cashoutHint.textContent = state.account.cashedOut
+                ? 'Баланс зафиксирован'
+                : cashoutPending
+                    ? 'Запрос обрабатывается'
+                    : 'или зажмите клавишу Q'
+            cashoutHint.style.opacity = canCashOut ? '0.85' : '0.5'
+        }
+    }
+
+    function sanitizeBetValue(value, maxBalance) {
+        const max = Math.max(0, Math.floor(maxBalance || 0))
+        if (max <= 0) return 0
+        const raw = Math.floor(Number(value) || 0)
+        if (raw < 1) return 1
+        return Math.min(raw, max)
+    }
+
+    function canRequestCashout() {
+        return !state.account.cashedOut && !cashoutPending && getTotalBalance() > 0 && ws && ws.readyState === WebSocket.OPEN
+    }
+
+    function resetCashoutHold(options = {}) {
+        if (cashoutHoldFrame) cancelAnimationFrame(cashoutHoldFrame)
+        cashoutHoldFrame = null
+        cashoutHoldStart = null
+        cashoutHoldSource = null
+        cashoutHoldTriggered = false
+        if (cashoutButton) {
+            cashoutButton.classList.remove('holding')
+            if (!state.account.cashedOut && !options.preserveLabel) {
+                cashoutButton.textContent = 'Удерживайте 3 секунды для вывода'
+            }
+        }
+    }
+
+    function updateCashoutCountdown(now) {
+        if (cashoutHoldStart === null) return
+        const elapsed = now - cashoutHoldStart
+        const remaining = Math.max(0, CASHOUT_HOLD_MS - elapsed)
+        if (cashoutButton && !state.account.cashedOut) {
+            if (remaining > 0) {
+                cashoutButton.textContent = `Удерживайте ещё ${(remaining / 1000).toFixed(1)} с`
+            } else {
+                cashoutButton.textContent = 'Запрос вывода...'
+            }
+        }
+        if (elapsed >= CASHOUT_HOLD_MS) {
+            triggerCashout()
+            return
+        }
+        cashoutHoldFrame = requestAnimationFrame(updateCashoutCountdown)
+    }
+
+    function startCashoutHold(source) {
+        if (!canRequestCashout()) return
+        if (cashoutHoldStart !== null) return
+        cashoutHoldStart = performance.now()
+        cashoutHoldSource = source
+        cashoutHoldTriggered = false
+        if (cashoutButton) cashoutButton.classList.add('holding')
+        cashoutHoldFrame = requestAnimationFrame(updateCashoutCountdown)
+    }
+
+    function triggerCashout() {
+        if (cashoutHoldTriggered) return
+        cashoutHoldTriggered = true
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'cashout_request' }))
+        }
+        if (cashoutButton) {
+            cashoutButton.textContent = 'Запрос вывода...'
+        }
+        cashoutPending = true
+        resetCashoutHold({ preserveLabel: true })
+        updateBalanceHUD()
     }
 
     function getMeSnake() {
@@ -715,7 +1027,9 @@
         boostActive: false,
         limits: { minLength: 0, baseLength: 0, boostMinLength: 0 },
         lastInputSent: 0,
-        lastSnapshotAt: 0
+        lastSnapshotAt: 0,
+        account: { balance: 1000, currentBet: 0, total: 1000, cashedOut: false },
+        pendingBet: null
     }
 
     const pointerMedia = window.matchMedia('(pointer: coarse)')
@@ -746,6 +1060,7 @@
 
     buildSkinPicker()
     renderLeaderboard()
+    updateBalanceHUD()
     updateHUD(0)
 
     let hexPattern = buildHexPattern()
@@ -856,6 +1171,8 @@
         }
         ws.onclose = () => {
             state.alive = false
+            cashoutPending = false
+            updateBalanceHUD()
         }
         ws.onmessage = (event) => {
             const message = safeParse(event.data)
@@ -863,6 +1180,14 @@
             if (message.type === 'welcome') {
                 state.meId = message.id
                 state.alive = true
+                cashoutPending = false
+                applyBalanceUpdate({
+                    balance: typeof message.balance === 'number' ? message.balance : state.account.balance,
+                    currentBet: typeof message.currentBet === 'number' ? message.currentBet : state.account.currentBet,
+                    total: (typeof message.balance === 'number' ? message.balance : state.account.balance) +
+                        (typeof message.currentBet === 'number' ? message.currentBet : state.account.currentBet),
+                    cashedOut: false
+                })
                 if (typeof message.width === 'number' && typeof message.height === 'number') {
                     const radius = typeof message.radius === 'number'
                         ? message.radius
@@ -894,6 +1219,13 @@
                     }
                 }
                 refreshBoostState(true)
+                if (state.pendingBet !== null && ws.readyState === WebSocket.OPEN) {
+                    const desired = sanitizeBetValue(state.pendingBet, state.account.balance)
+                    if (desired > 0) {
+                        ws.send(JSON.stringify({ type: 'set_bet', amount: desired }))
+                    }
+                    state.pendingBet = null
+                }
             }
             if (message.type === 'snapshot') {
                 state.lastSnapshotAt = performance.now()
@@ -901,6 +1233,13 @@
                 if (message.leaderboard) {
                     state.leaderboard = message.leaderboard
                     renderLeaderboard()
+                }
+                if (message.you && (typeof message.you.balance === 'number' || typeof message.you.currentBet === 'number')) {
+                    applyBalanceUpdate({
+                        balance: message.you.balance,
+                        currentBet: message.you.currentBet,
+                        total: message.you.totalBalance
+                    })
                 }
                 applySnapshot(message)
                 refreshBoostState()
@@ -910,6 +1249,23 @@
             }
             if (message.type === 'death') {
                 showDeath(message)
+            }
+            if (message.type === 'balance') {
+                applyBalanceUpdate(message)
+            }
+            if (message.type === 'cashout_confirmed') {
+                state.alive = false
+                showCashout(typeof message.balance === 'number' ? message.balance : undefined)
+            }
+            if (message.type === 'error') {
+                if (message.code === 'cashout_failed') {
+                    cashoutPending = false
+                    updateBalanceHUD()
+                    resetCashoutHold()
+                    if (cashoutButton) {
+                        cashoutButton.textContent = 'Ошибка вывода'
+                    }
+                }
             }
         }
     }
@@ -1257,16 +1613,84 @@
 
     function showDeath(message) {
         state.alive = false
+        cashoutPending = false
         resetBoostIntent()
+        resetCashoutHold()
         const killerName = message && message.killerName ? message.killerName : 'неизвестный'
         const score = message && typeof message.yourScore === 'number' ? message.yourScore : 0
+        const balance = Math.max(0, state.account.balance || 0)
         deathSummary.textContent = `Вас победил ${killerName}`
         deathScore.textContent = `Счёт: ${score.toLocaleString('ru-RU')}`
+        if (deathBalanceEl) {
+            deathBalanceEl.textContent = balance > 0
+                ? `На счету осталось ${formatNumber(balance)} очков`
+                : 'Баланс обнулён'
+        }
+        if (deathBetBalanceEl) deathBetBalanceEl.textContent = formatNumber(balance)
+        if (retryBetInput) {
+            if (balance > 0) {
+                const suggested = sanitizeBetValue(retryBetInput.value || balance, balance)
+                retryBetInput.value = suggested
+                retryBetInput.disabled = false
+            } else {
+                retryBetInput.value = ''
+                retryBetInput.disabled = true
+            }
+        }
+        if (retryBtn) {
+            const canRetry = balance > 0
+            retryBtn.disabled = !canRetry
+            retryBtn.setAttribute('aria-disabled', canRetry ? 'false' : 'true')
+        }
+        if (deathBetControl) {
+            deathBetControl.style.display = balance > 0 ? 'block' : 'none'
+        }
         deathScreen.classList.remove('hidden')
+        updateHUD(0)
+        updateBalanceHUD()
+    }
+
+    function showCashout(finalBalance) {
+        state.alive = false
+        cashoutPending = false
+        resetBoostIntent()
+        resetCashoutHold()
+        const safeBalance = Math.max(0, Math.floor(typeof finalBalance === 'number' ? finalBalance : getTotalBalance()))
+        deathScreen.classList.add('hidden')
+        applyBalanceUpdate({ balance: safeBalance, currentBet: 0, total: safeBalance, cashedOut: true })
+        if (cashoutSummary) {
+            cashoutSummary.textContent = `Вы вывели ${formatNumber(safeBalance)} очков.`
+        }
+        if (cashoutButton) {
+            cashoutButton.textContent = 'Баланс выведен'
+            cashoutButton.disabled = true
+            cashoutButton.setAttribute('aria-disabled', 'true')
+        }
+        if (cashoutScreen) {
+            cashoutScreen.classList.remove('hidden')
+        }
         updateHUD(0)
     }
 
-    retryBtn.addEventListener('click', () => window.location.reload())
+    retryBtn.addEventListener('click', () => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            window.location.reload()
+            return
+        }
+        const balance = Math.max(0, state.account.balance || 0)
+        if (balance <= 0) {
+            window.location.reload()
+            return
+        }
+        const betAmount = sanitizeBetValue(retryBetInput ? retryBetInput.value : balance, balance)
+        if (betAmount <= 0) return
+        ws.send(JSON.stringify({ type: 'set_bet', amount: betAmount }))
+        ws.send(JSON.stringify({ type: 'respawn' }))
+        state.pendingBet = null
+        retryBtn.disabled = true
+        retryBtn.setAttribute('aria-disabled', 'true')
+        deathScreen.classList.add('hidden')
+    })
 
     function lerp(a, b, t) {
         return a + (b - a) * t
@@ -1754,6 +2178,7 @@
         resetBoostIntent()
         joystickActive = false
         resetJoystickHandle()
+        resetCashoutHold()
     })
 
     canvas.addEventListener('touchstart', (event) => {
@@ -1841,6 +2266,23 @@
         })
     }
 
+    if (cashoutButton) {
+        cashoutButton.addEventListener('pointerdown', (event) => {
+            if (event.button !== undefined && event.button !== 0) return
+            if (cashoutButton.disabled || cashoutButton.getAttribute('aria-disabled') === 'true') return
+            event.preventDefault()
+            startCashoutHold('pointer')
+        })
+        const stopCashoutPointer = () => {
+            if (!cashoutPending) {
+                resetCashoutHold()
+            }
+        }
+        cashoutButton.addEventListener('pointerup', stopCashoutPointer)
+        cashoutButton.addEventListener('pointerleave', stopCashoutPointer)
+        cashoutButton.addEventListener('pointercancel', stopCashoutPointer)
+    }
+
     window.addEventListener('keydown', (event) => {
         if (event.repeat) return
         if (event.code === 'Space') {
@@ -1848,16 +2290,60 @@
             event.preventDefault()
             setBoostIntent(true)
         }
+        if (event.code === 'KeyQ' || event.key === 'q' || event.key === 'Q') {
+            if (isEditableTarget(event.target)) return
+            event.preventDefault()
+            startCashoutHold('keyboard')
+        }
     })
 
     window.addEventListener('keyup', (event) => {
         if (event.code === 'Space') {
             resetBoostIntent()
         }
+        if (event.code === 'KeyQ' || event.key === 'q' || event.key === 'Q') {
+            if (!cashoutPending) {
+                resetCashoutHold()
+            }
+        }
     })
+
+    if (betInput) {
+        betInput.addEventListener('blur', () => {
+            const balance = Math.max(0, state.account.balance || 0)
+            if (balance <= 0) {
+                betInput.value = ''
+                return
+            }
+            const sanitized = sanitizeBetValue(betInput.value, balance)
+            betInput.value = sanitized > 0 ? sanitized : ''
+        })
+    }
+
+    if (retryBetInput) {
+        retryBetInput.addEventListener('blur', () => {
+            const balance = Math.max(0, state.account.balance || 0)
+            if (balance <= 0) {
+                retryBetInput.value = ''
+                return
+            }
+            const sanitized = sanitizeBetValue(retryBetInput.value, balance)
+            retryBetInput.value = sanitized > 0 ? sanitized : ''
+        })
+    }
 
     function startGame() {
         const name = nicknameInput.value.trim() || 'Anon'
+        const balanceForBet = state.account.balance || 0
+        let betAmount = betInput ? sanitizeBetValue(betInput.value, balanceForBet) : 0
+        if (betInput) {
+            if (betAmount > 0) {
+                betInput.value = betAmount
+            } else {
+                betInput.value = balanceForBet > 0 ? 1 : ''
+            }
+        }
+        state.pendingBet = betAmount > 0 ? betAmount : null
         state.meName = name
         nicknameScreen.classList.add('hidden')
         connect(name, selectedSkin)
@@ -1867,6 +2353,19 @@
     nicknameInput.addEventListener('keydown', (event) => {
         if (event.key === 'Enter') startGame()
     })
+
+    if (cashoutCloseBtn) {
+        cashoutCloseBtn.addEventListener('click', () => {
+            try {
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    ws.close(1000, 'client_exit')
+                }
+            } catch (err) {
+                // ignore
+            }
+            window.location.reload()
+        })
+    }
 })();
 </script>
 </body>
