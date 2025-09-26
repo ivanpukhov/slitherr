@@ -827,10 +827,11 @@
                     smoothed.push({ x: target.x, y: target.y })
                 } else {
                     const tailDist = Math.hypot(target.x - prevPoint.x, target.y - prevPoint.y)
-                    if (tailDist > SEGMENT_SPACING * 12) {
+                    if (tailDist > SEGMENT_SPACING * 8) {
                         smoothed.push({ x: target.x, y: target.y })
                     } else {
-                        const tailBlend = tailDist > SEGMENT_SPACING * 4 ? 0.55 : 0.35
+                        const normalized = Math.min(1, Math.max(0, tailDist / (SEGMENT_SPACING * 2)))
+                        const tailBlend = 0.45 + normalized * 0.45
                         smoothed.push({
                             x: lerp(prevPoint.x, target.x, tailBlend),
                             y: lerp(prevPoint.y, target.y, tailBlend)
