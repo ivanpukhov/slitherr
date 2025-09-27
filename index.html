@@ -769,6 +769,7 @@
     const LENGTH_EPS = 1e-3
     const MINIMAP_SIZE = 188
     const CASHOUT_HOLD_MS = 2000
+    const PING_INTERVAL_MS = 2500
 
     let cashoutHoldStart = null
     let cashoutHoldFrame = null
@@ -1051,8 +1052,10 @@
         limits: { minLength: 0, baseLength: 0, boostMinLength: 0 },
         lastInputSent: 0,
         lastSnapshotAt: 0,
+        latencyMs: null,
         account: { balance: 1000, currentBet: 0, total: 1000, cashedOut: false },
-        pendingBet: null
+        pendingBet: null,
+        lastScore: 0
     }
 
     const pointerMedia = window.matchMedia('(pointer: coarse)')
@@ -1060,6 +1063,8 @@
     let lastBoostAllowed = null
     let lastBoostActive = null
     let joystickActive = false
+    let pingIntervalId = null
+    let lastPingSentAt = null
 
     function setTouchControlsEnabled(enabled) {
         touchControlsEnabled = Boolean(enabled)
@@ -1184,22 +1189,68 @@
         return ctx.createPattern(off, 'repeat')
     }
 
+    function stopLatencyMonitor() {
+        if (pingIntervalId) {
+            clearInterval(pingIntervalId)
+            pingIntervalId = null
+        }
+        lastPingSentAt = null
+    }
+
+    function sendLatencyPing() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return
+        lastPingSentAt = performance.now()
+        try {
+            ws.send(JSON.stringify({ type: 'ping', t: lastPingSentAt }))
+        } catch (err) {
+            // ignore network send errors
+        }
+    }
+
+    function startLatencyMonitor() {
+        stopLatencyMonitor()
+        sendLatencyPing()
+        pingIntervalId = setInterval(() => {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                stopLatencyMonitor()
+                return
+            }
+            sendLatencyPing()
+        }, PING_INTERVAL_MS)
+    }
+
     function connect(name, skin) {
+        stopLatencyMonitor()
+        state.latencyMs = null
+        updateHUD(state.lastScore || 0)
         const origin = (typeof location !== 'undefined' && location.origin && location.origin !== 'null')
             ? location.origin.replace(/^http/, 'ws')
             : 'ws://localhost:8080'
         ws = new WebSocket(origin)
         ws.onopen = () => {
             ws.send(JSON.stringify({ type: 'join', name, skin }))
+            startLatencyMonitor()
         }
         ws.onclose = () => {
             state.alive = false
             cashoutPending = false
+            state.latencyMs = null
+            updateHUD(state.lastScore || 0)
+            stopLatencyMonitor()
             updateBalanceHUD()
         }
         ws.onmessage = (event) => {
             const message = safeParse(event.data)
             if (!message) return
+            if (message.type === 'pong') {
+                const sentAt = typeof message.t === 'number' ? message.t : lastPingSentAt
+                if (typeof sentAt === 'number') {
+                    const latency = Math.max(0, performance.now() - sentAt)
+                    state.latencyMs = latency
+                    updateHUD(state.lastScore || 0)
+                }
+                return
+            }
             if (message.type === 'welcome') {
                 state.meId = message.id
                 state.alive = true
@@ -1595,7 +1646,8 @@
     }
 
     function updateHUD(score) {
-        scoreValueEl.textContent = (score || 0).toLocaleString('ru-RU')
+        state.lastScore = score || 0
+        scoreValueEl.textContent = state.lastScore.toLocaleString('ru-RU')
         const rank = getRank()
         const meSnake = getMeSnake()
         const speed = meSnake && meSnake.speed ? Math.max(0, Math.round(meSnake.speed)) : null
@@ -1603,9 +1655,15 @@
         const boostLabel = boostStatus.allowed
             ? (boostStatus.active ? 'Буст: вкл.' : 'Буст: готов')
             : 'Буст: нет'
-        scoreMetaEl.textContent = speed
-            ? `Ранг: ${rank} · Скорость: ${speed} · ${boostLabel}`
-            : `Ранг: ${rank} · ${boostLabel}`
+        const metaParts = [`Ранг: ${rank}`]
+        if (Number.isFinite(speed)) {
+            metaParts.push(`Скорость: ${speed}`)
+        }
+        metaParts.push(boostLabel)
+        if (Number.isFinite(state.latencyMs)) {
+            metaParts.push(`Пинг: ${Math.max(0, Math.round(state.latencyMs))} мс`)
+        }
+        scoreMetaEl.textContent = metaParts.join(' · ')
     }
 
     function getRank() {
