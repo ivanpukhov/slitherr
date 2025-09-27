@@ -434,7 +434,12 @@ class World {
                     const seg = q.path[i]
                     if (!seg) continue
                     const r = this.cfg.bodyRadius + Math.min(10, Math.sqrt(q.length) * 0.2)
-                    if (dist2(p.x, p.y, seg.x, seg.y) <= (p.r + r) * (p.r + r)) {
+                    const forgiveness = typeof this.cfg.collisionForgiveness === 'number'
+                        ? this.cfg.collisionForgiveness
+                        : 1
+                    const headRadius = (p.r || this.cfg.headRadius) * forgiveness
+                    const bodyRadius = r * forgiveness
+                    if (dist2(p.x, p.y, seg.x, seg.y) <= (headRadius + bodyRadius) * (headRadius + bodyRadius)) {
                         this.kill(p, q)
                         break
                     }

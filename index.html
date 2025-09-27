@@ -761,14 +761,30 @@
 
     const FOOD_PULSE_SPEED = 4.2
     const CAMERA_SMOOTH = 6.5
-    const POSITION_SMOOTH = 14
-    const ANGLE_SMOOTH = 12
     const CAMERA_ZOOM = 1.18
-    const MAX_PREDICTION_SECONDS = 0.45
     const SEGMENT_SPACING = 6
     const LENGTH_EPS = 1e-3
     const MINIMAP_SIZE = 188
     const CASHOUT_HOLD_MS = 2000
+    const RENDER_DELAY_MS = 120
+    const SNAPSHOT_BUFFER_SIZE = 30
+    const MAX_UPDATE_DT = 0.02
+    const REMOTE_BLEND = 0.85
+    const LOCAL_RECONCILE_BLEND = 0.88
+    const CAMERA_CULL_PADDING = 220
+
+    const SERVER_CFG = {
+        headRadius: 8,
+        bodyRadius: 6,
+        baseSpeed: 160,
+        speedMinFactor: 0.42,
+        speedLengthSoftCap: 500,
+        speedLengthExponent: 0.65,
+        boostMultiplier: 1.7,
+        boostLengthDrain: 3,
+        maxTurnRate: 7.2,
+        segmentSpacing: SEGMENT_SPACING
+    }
 
     let cashoutHoldStart = null
     let cashoutHoldFrame = null
@@ -970,6 +986,26 @@
         return state.meId ? state.snakes.get(state.meId) : null
     }
 
+    function ensureSnake(id) {
+        if (!id) return null
+        let snake = state.snakes.get(id)
+        if (!snake) {
+            snake = {
+                id,
+                renderPath: [],
+                displayLength: 0,
+                length: 0,
+                alive: true,
+                boost: false
+            }
+            state.snakes.set(id, snake)
+        }
+        if (!Array.isArray(snake.renderPath)) {
+            snake.renderPath = []
+        }
+        return snake
+    }
+
     function canBoost() {
         const me = getMeSnake()
         if (!me || !me.alive || !state.alive) return false
@@ -1052,7 +1088,16 @@
         lastInputSent: 0,
         lastSnapshotAt: 0,
         account: { balance: 1000, currentBet: 0, total: 1000, cashedOut: false },
-        pendingBet: null
+        pendingBet: null,
+        snapshots: [],
+        renderDelay: RENDER_DELAY_MS,
+        network: {
+            ping: 120,
+            offset: 0,
+            pending: new Map(),
+            lastPingAt: 0
+        },
+        meServerState: null
     }
 
     const pointerMedia = window.matchMedia('(pointer: coarse)')
@@ -1060,6 +1105,7 @@
     let lastBoostAllowed = null
     let lastBoostActive = null
     let joystickActive = false
+    let pingTimer = null
 
     function setTouchControlsEnabled(enabled) {
         touchControlsEnabled = Boolean(enabled)
@@ -1190,16 +1236,34 @@
             : 'ws://83.222.22.106:8080'
         ws = new WebSocket(origin)
         ws.onopen = () => {
+            state.snapshots.length = 0
+            state.network.ping = 120
+            state.network.offset = 0
+            state.network.pending = new Map()
+            state.network.lastPingAt = performance.now()
+            state.meServerState = null
+            state.camera.initialized = false
+            if (pingTimer) clearInterval(pingTimer)
+            pingTimer = setInterval(sendPing, 1000)
+            sendPing()
             ws.send(JSON.stringify({ type: 'join', name, skin }))
         }
         ws.onclose = () => {
             state.alive = false
             cashoutPending = false
             updateBalanceHUD()
+            if (pingTimer) {
+                clearInterval(pingTimer)
+                pingTimer = null
+            }
         }
         ws.onmessage = (event) => {
             const message = safeParse(event.data)
             if (!message) return
+            if (message.type === 'pong') {
+                handlePong(message)
+                return
+            }
             if (message.type === 'welcome') {
                 state.meId = message.id
                 state.alive = true
@@ -1301,54 +1365,422 @@
         }
     }
 
+    function clonePoints(points) {
+        if (!Array.isArray(points)) return undefined
+        return points.map((p) => ({ x: p.x, y: p.y }))
+    }
+
+    function clonePlayer(payload) {
+        if (!payload) return null
+        const copy = { ...payload }
+        if (Array.isArray(payload.path)) {
+            copy.path = clonePoints(payload.path)
+        }
+        return copy
+    }
+
+    function cloneFood(payload) {
+        if (!payload) return null
+        return { ...payload }
+    }
+
     function applySnapshot(snapshot) {
+        const now = performance.now()
+        const serverTime = typeof snapshot.serverTime === 'number' ? snapshot.serverTime : Date.now()
+        const estimated = serverTime + state.network.ping * 0.5
+        const offset = estimated - now
+        if (!Number.isFinite(state.network.offset)) {
+            state.network.offset = offset
+        } else {
+            state.network.offset = lerp(state.network.offset, offset, 0.1)
+        }
+
+        const entry = {
+            tick: typeof snapshot.tick === 'number' ? snapshot.tick : 0,
+            serverTime,
+            estimatedTime: estimated,
+            receivedAt: now,
+            you: snapshot.you ? clonePlayer(snapshot.you) : null,
+            players: Array.isArray(snapshot.players) ? snapshot.players.map(clonePlayer).filter(Boolean) : [],
+            foods: Array.isArray(snapshot.foods) ? snapshot.foods.map(cloneFood).filter(Boolean) : []
+        }
+
+        state.snapshots.push(entry)
+        while (state.snapshots.length > SNAPSHOT_BUFFER_SIZE) {
+            state.snapshots.shift()
+        }
+
+        state.alive = snapshot.you ? snapshot.you.alive : state.alive
+        if (entry.you && entry.you.id === state.meId) {
+            updateLocalServerState(entry.you, entry)
+        }
+    }
+
+    function initializeLocalSnakeFromServer(snake, payload) {
+        const baseAngle = typeof payload.angle === 'number' ? payload.angle : 0
+        const dir = typeof payload.dir === 'number' ? payload.dir : baseAngle
+        snake.x = payload.x
+        snake.y = payload.y
+        snake.displayX = payload.x
+        snake.displayY = payload.y
+        snake.targetX = payload.x
+        snake.targetY = payload.y
+        snake.angle = baseAngle
+        snake.displayAngle = baseAngle
+        snake.targetAngle = baseAngle
+        snake.dir = dir
+        snake.displayDir = dir
+        snake.targetDir = dir
+        snake.length = typeof payload.length === 'number' ? payload.length : snake.length || 0
+        snake.displayLength = snake.length
+        snake.boost = Boolean(payload.boost)
+        snake.alive = payload.alive
+        snake.renderPath = rebuildPath(payload.path || [], payload.x, payload.y, snake.length, dir)
+        snake.predictedInitialized = true
+    }
+
+    function updateLocalServerState(serverPayload, entry) {
+        const meId = serverPayload.id
+        if (!meId) return
+        const me = ensureSnake(meId)
+        const angle = typeof serverPayload.angle === 'number'
+            ? serverPayload.angle
+            : (typeof serverPayload.dir === 'number' ? serverPayload.dir : 0)
+        const dir = typeof serverPayload.dir === 'number' ? serverPayload.dir : angle
+        if (!me.predictedInitialized) {
+            initializeLocalSnakeFromServer(me, serverPayload)
+        }
+        me.serverX = serverPayload.x
+        me.serverY = serverPayload.y
+        me.serverAngle = angle
+        me.serverDir = dir
+        me.serverLength = typeof serverPayload.length === 'number' ? serverPayload.length : me.serverLength
+        me.skin = serverPayload.skin || me.skin || 'default'
+        me.name = serverPayload.name || me.name || ''
+        me.alive = serverPayload.alive
+        state.meServerState = {
+            x: serverPayload.x,
+            y: serverPayload.y,
+            angle,
+            dir,
+            length: typeof serverPayload.length === 'number' ? serverPayload.length : me.length,
+            alive: Boolean(serverPayload.alive),
+            tick: entry.tick,
+            serverTime: entry.estimatedTime
+        }
+        if (!serverPayload.alive) {
+            state.alive = false
+        }
+    }
+
+    function snapshotToPlayerMap(entry) {
+        const map = new Map()
+        if (!entry) return map
+        if (entry.you && entry.you.id) {
+            map.set(entry.you.id, entry.you)
+        }
+        if (Array.isArray(entry.players)) {
+            for (const player of entry.players) {
+                if (player && player.id) {
+                    map.set(player.id, player)
+                }
+            }
+        }
+        return map
+    }
+
+    function snapshotToFoodMap(entry) {
+        const map = new Map()
+        if (!entry || !Array.isArray(entry.foods)) return map
+        for (const food of entry.foods) {
+            if (food && food.id) {
+                map.set(food.id, food)
+            }
+        }
+        return map
+    }
+
+    function resolveSnapshotPair(renderTime) {
+        const buffer = state.snapshots
+        if (!buffer.length) {
+            return { previous: null, next: null, alpha: 0 }
+        }
+        let previous = buffer[0]
+        let next = buffer[buffer.length - 1]
+        for (let i = 0; i < buffer.length; i++) {
+            const snap = buffer[i]
+            if (snap.estimatedTime <= renderTime) {
+                previous = snap
+            } else {
+                next = snap
+                break
+            }
+        }
+        if (!next) next = previous
+        if (next.estimatedTime < previous.estimatedTime) {
+            next = previous
+        }
+        const span = Math.max(1, next.estimatedTime - previous.estimatedTime)
+        const alpha = clamp((renderTime - previous.estimatedTime) / span, 0, 1)
+        return { previous, next, alpha }
+    }
+
+    function pruneSnapshots(renderTime) {
+        const cutoff = renderTime - 1000
+        while (state.snapshots.length > 1 && state.snapshots[0].estimatedTime < cutoff) {
+            state.snapshots.shift()
+        }
+    }
+
+    function interpolatePlayer(a, b, t) {
+        if (!a && !b) return null
+        if (!a) return clonePlayer(b)
+        if (!b) return clonePlayer(a)
+        const id = a.id || b.id
+        const angleA = typeof a.angle === 'number' ? a.angle : (typeof a.dir === 'number' ? a.dir : 0)
+        const angleB = typeof b.angle === 'number' ? b.angle : (typeof b.dir === 'number' ? b.dir : 0)
+        const dirA = typeof a.dir === 'number' ? a.dir : angleA
+        const dirB = typeof b.dir === 'number' ? b.dir : angleB
+        const result = {
+            id,
+            x: lerp(a.x, b.x, t),
+            y: lerp(a.y, b.y, t),
+            angle: lerpAngle(angleA, angleB, t),
+            dir: lerpAngle(dirA, dirB, t),
+            length: lerp(typeof a.length === 'number' ? a.length : 0, typeof b.length === 'number' ? b.length : 0, t),
+            speed: lerp(typeof a.speed === 'number' ? a.speed : 0, typeof b.speed === 'number' ? b.speed : 0, t),
+            skin: b.skin || a.skin || 'default',
+            name: b.name || a.name || '',
+            alive: t >= 0.5 ? b.alive : a.alive,
+            path: (t >= 0.5 ? b.path : a.path) || a.path || b.path || []
+        }
+        return result
+    }
+
+    function interpolateFood(a, b, t) {
+        if (!a && !b) return null
+        if (!a) return cloneFood(b)
+        if (!b) return cloneFood(a)
+        return {
+            id: a.id || b.id,
+            x: lerp(a.x, b.x, t),
+            y: lerp(a.y, b.y, t),
+            v: lerp(typeof a.v === 'number' ? a.v : 1, typeof b.v === 'number' ? b.v : 1, t),
+            color: b.color || a.color,
+            big: t >= 0.5 ? b.big : a.big,
+            pulse: typeof b.pulse === 'number' ? b.pulse : a.pulse,
+            createdAt: b.createdAt || a.createdAt
+        }
+    }
+
+    function updateRemoteSnakes(previous, next, alpha) {
+        const mapA = snapshotToPlayerMap(previous)
+        const mapB = snapshotToPlayerMap(next)
+        const ids = new Set()
+        for (const key of mapA.keys()) ids.add(key)
+        for (const key of mapB.keys()) ids.add(key)
         const seen = new Set()
-        if (Array.isArray(snapshot.players)) {
-            snapshot.players.forEach((payload) => {
-                if (!payload || !payload.id) return
-                seen.add(payload.id)
-                upsertSnake(payload)
-            })
-        }
-        if (snapshot.you && snapshot.you.id) {
-            seen.add(snapshot.you.id)
-        }
+        ids.forEach((id) => {
+            if (id === state.meId) return
+            const data = interpolatePlayer(mapA.get(id), mapB.get(id), alpha)
+            if (!data) return
+            const snake = ensureSnake(id)
+            snake.length = data.length
+            snake.displayLength = data.length
+            snake.alive = data.alive
+            snake.skin = data.skin || snake.skin || 'default'
+            snake.name = data.name || snake.name || ''
+            const blend = REMOTE_BLEND
+            snake.displayX = typeof snake.displayX === 'number' ? lerp(snake.displayX, data.x, blend) : data.x
+            snake.displayY = typeof snake.displayY === 'number' ? lerp(snake.displayY, data.y, blend) : data.y
+            snake.displayAngle = typeof snake.displayAngle === 'number' ? lerpAngle(snake.displayAngle, data.angle, blend) : data.angle
+            snake.displayDir = typeof snake.displayDir === 'number' ? lerpAngle(snake.displayDir, data.dir, blend) : data.dir
+            snake.targetX = data.x
+            snake.targetY = data.y
+            snake.targetAngle = data.angle
+            snake.targetDir = data.dir
+            const rebuiltPath = rebuildPath(data.path || [], data.x, data.y, data.length, data.dir)
+            smoothAssignPath(snake, rebuiltPath)
+            seen.add(id)
+        })
         for (const [id] of state.snakes) {
+            if (id === state.meId) continue
             if (!seen.has(id)) {
                 state.snakes.delete(id)
             }
         }
+    }
 
-        const foodSeen = new Set()
-        if (Array.isArray(snapshot.foods)) {
-            snapshot.foods.forEach((f) => {
-                if (!f || !f.id) return
-                foodSeen.add(f.id)
-                let food = state.foods.get(f.id)
-                if (!food) {
-                    food = {
-                        id: f.id,
-                        displayX: f.x,
-                        displayY: f.y,
-                        life: 0
-                    }
-                    state.foods.set(f.id, food)
-                }
-                food.targetX = f.x
-                food.targetY = f.y
-                food.value = typeof f.v === 'number' ? f.v : 1
-                if (f.color && /^#/.test(f.color)) {
-                    food.color = f.color
-                } else if (!food.color) {
-                    food.color = randomFoodColor(f.id)
-                }
-                food.big = Boolean(f.big)
-                if (typeof f.pulse === 'number') food.pulse = f.pulse
-                else if (typeof food.pulse !== 'number') food.pulse = Math.random() * Math.PI * 2
-            })
-        }
+    function updateRemoteFoods(previous, next, alpha) {
+        const mapA = snapshotToFoodMap(previous)
+        const mapB = snapshotToFoodMap(next)
+        const ids = new Set()
+        for (const key of mapA.keys()) ids.add(key)
+        for (const key of mapB.keys()) ids.add(key)
+        const seen = new Set()
+        ids.forEach((id) => {
+            const data = interpolateFood(mapA.get(id), mapB.get(id), alpha)
+            if (!data) return
+            let food = state.foods.get(id)
+            if (!food) {
+                food = { id, displayX: data.x, displayY: data.y, life: 0 }
+                state.foods.set(id, food)
+            }
+            food.targetX = data.x
+            food.targetY = data.y
+            food.displayX = typeof food.displayX === 'number' ? lerp(food.displayX, data.x, REMOTE_BLEND) : data.x
+            food.displayY = typeof food.displayY === 'number' ? lerp(food.displayY, data.y, REMOTE_BLEND) : data.y
+            food.value = typeof data.v === 'number' ? data.v : (food.value || 1)
+            if (data.color && /^#/.test(data.color)) {
+                food.color = data.color
+            } else if (!food.color) {
+                food.color = randomFoodColor(id)
+            }
+            food.big = Boolean(data.big)
+            if (typeof data.pulse === 'number') food.pulse = data.pulse
+            else if (typeof food.pulse !== 'number') food.pulse = Math.random() * Math.PI * 2
+            seen.add(id)
+        })
         for (const [id] of state.foods) {
-            if (!foodSeen.has(id)) state.foods.delete(id)
+            if (!seen.has(id)) {
+                state.foods.delete(id)
+            }
+        }
+    }
+
+    function updateLocalSnake(dt) {
+        const me = getMeSnake()
+        if (!me || !state.meId) return
+        if (!me.predictedInitialized && state.meServerState) {
+            initializeLocalSnakeFromServer(me, state.meServerState)
+        }
+        if (!me.predictedInitialized) return
+        if (!state.alive || !me.alive) {
+            me.boost = false
+            return
+        }
+        if (typeof state.pointerAngle === 'number' && Number.isFinite(state.pointerAngle)) {
+            me.targetAngle = state.pointerAngle
+        }
+        const desiredAngle = typeof me.targetAngle === 'number' ? me.targetAngle : me.angle || 0
+        const currentAngle = typeof me.angle === 'number' ? me.angle : desiredAngle
+        const diff = normalizeAngle(desiredAngle - currentAngle)
+        const maxTurn = SERVER_CFG.maxTurnRate * dt
+        const turn = clamp(diff, -maxTurn, maxTurn)
+        me.angle = normalizeAngle(currentAngle + turn)
+        me.dir = me.angle
+        const baseLength = state.limits.baseLength || 20
+        let length = typeof me.length === 'number' ? me.length : baseLength
+        const growth = Math.max(0, length - baseLength)
+        const slowRatio = Math.pow(1 / (1 + growth / SERVER_CFG.speedLengthSoftCap), SERVER_CFG.speedLengthExponent)
+        const lengthFactor = SERVER_CFG.speedMinFactor + (1 - SERVER_CFG.speedMinFactor) * slowRatio
+        const baseSpeed = SERVER_CFG.baseSpeed * lengthFactor
+        const minLength = state.limits.boostMinLength || state.limits.minLength || baseLength
+        const boosting = Boolean(state.boostIntent && length > minLength + 1e-3)
+        me.boost = boosting
+        state.boostActive = boosting
+        const speed = boosting ? baseSpeed * SERVER_CFG.boostMultiplier : baseSpeed
+        me.speed = speed
+        const prevX = typeof me.x === 'number' ? me.x : me.displayX || 0
+        const prevY = typeof me.y === 'number' ? me.y : me.displayY || 0
+        me.x = prevX + Math.cos(me.angle) * speed * dt
+        me.y = prevY + Math.sin(me.angle) * speed * dt
+        if (state.world) {
+            const border = projectToCircle(state.world.centerX, state.world.centerY, Math.max(0, state.world.radius - SERVER_CFG.headRadius), me.x, me.y)
+            me.x = border.x
+            me.y = border.y
+        }
+        if (boosting) {
+            length = Math.max(minLength, length - SERVER_CFG.boostLengthDrain * dt)
+            me.length = length
+        }
+        me.length = typeof me.length === 'number' ? me.length : length
+        me.displayX = me.x
+        me.displayY = me.y
+        me.displayAngle = me.angle
+        me.displayDir = me.dir
+        me.targetX = me.x
+        me.targetY = me.y
+        me.targetAngle = me.angle
+        me.targetDir = me.dir
+        me.displayLength = me.length
+        updateLocalPath(me)
+        reconcileLocalSnake(me)
+    }
+
+    function updateLocalPath(me) {
+        if (!Array.isArray(me.renderPath) || me.renderPath.length === 0) {
+            me.renderPath = [{ x: me.x, y: me.y }]
+            return
+        }
+        const spacing = SERVER_CFG.segmentSpacing
+        const last = me.renderPath[me.renderPath.length - 1]
+        let dx = me.x - last.x
+        let dy = me.y - last.y
+        let dist = Math.hypot(dx, dy)
+        if (dist < 1e-4) {
+            last.x = me.x
+            last.y = me.y
+        } else {
+            const steps = Math.max(1, Math.floor(dist / spacing))
+            for (let i = 1; i <= steps; i++) {
+                const t = Math.min(1, i / steps)
+                me.renderPath.push({
+                    x: last.x + dx * t,
+                    y: last.y + dy * t
+                })
+            }
+        }
+        fitPathLength(me.renderPath, Math.max(SEGMENT_SPACING * 2, me.length || 0), SEGMENT_SPACING)
+        const head = me.renderPath[me.renderPath.length - 1]
+        if (head) {
+            head.x = me.x
+            head.y = me.y
+        }
+    }
+
+    function reconcileLocalSnake(me) {
+        const server = state.meServerState
+        if (!server) return
+        if (!server.alive) {
+            me.alive = false
+            me.boost = false
+            me.x = server.x
+            me.y = server.y
+            me.displayX = server.x
+            me.displayY = server.y
+            me.angle = server.angle
+            me.displayAngle = server.angle
+            me.dir = server.dir
+            me.displayDir = server.dir
+            me.length = server.length
+            me.displayLength = server.length
+            if (Array.isArray(me.renderPath) && me.renderPath.length) {
+                me.renderPath = [{ x: server.x, y: server.y }]
+            }
+            return
+        }
+        const diffX = server.x - me.x
+        const diffY = server.y - me.y
+        const dist = Math.hypot(diffX, diffY)
+        const blend = dist > 120 ? 1 : LOCAL_RECONCILE_BLEND
+        me.x = lerp(me.x, server.x, blend)
+        me.y = lerp(me.y, server.y, blend)
+        me.displayX = me.x
+        me.displayY = me.y
+        me.angle = lerpAngle(me.angle, server.angle, blend)
+        me.displayAngle = me.angle
+        me.dir = lerpAngle(me.dir || me.angle, server.dir, blend)
+        me.displayDir = me.dir
+        me.length = lerp(me.length, server.length, LOCAL_RECONCILE_BLEND)
+        me.displayLength = me.length
+        if (Array.isArray(me.renderPath) && me.renderPath.length) {
+            fitPathLength(me.renderPath, Math.max(SEGMENT_SPACING * 2, me.length || 0), SEGMENT_SPACING)
+            const head = me.renderPath[me.renderPath.length - 1]
+            if (head) {
+                head.x = me.x
+                head.y = me.y
+            }
         }
     }
 
@@ -1358,67 +1790,6 @@
         let acc = 0
         for (let i = 0; i < text.length; i++) acc = (acc + text.charCodeAt(i)) % palette.length
         return palette[acc]
-    }
-
-    function upsertSnake(payload) {
-        const id = payload.id
-        const now = performance.now()
-        const rawDir = typeof payload.dir === 'number'
-            ? payload.dir
-            : (typeof payload.angle === 'number' ? payload.angle : 0)
-        const rawAngle = typeof payload.angle === 'number' ? payload.angle : rawDir
-        let snake = state.snakes.get(id)
-        const previousSpeed = snake && typeof snake.speed === 'number' ? snake.speed : 0
-        const speed = typeof payload.speed === 'number' ? payload.speed : previousSpeed
-        if (!snake) {
-            snake = {
-                id,
-                displayX: payload.x,
-                displayY: payload.y,
-                targetX: payload.x,
-                targetY: payload.y,
-                displayAngle: rawAngle,
-                targetAngle: rawAngle,
-                displayDir: rawDir,
-                targetDir: rawDir,
-                renderPath: [],
-                length: payload.length || 0,
-                displayLength: payload.length || 0,
-                speed: speed,
-                alive: payload.alive,
-                name: payload.name || '',
-                skin: payload.skin || 'default',
-                serverX: payload.x,
-                serverY: payload.y,
-                serverAngle: rawAngle,
-                serverDir: rawDir,
-                velocityX: Math.cos(rawDir) * speed,
-                velocityY: Math.sin(rawDir) * speed,
-                lastServerAt: now
-            }
-            state.snakes.set(id, snake)
-        }
-        snake.serverX = payload.x
-        snake.serverY = payload.y
-        snake.serverAngle = rawAngle
-        snake.serverDir = rawDir
-        snake.lastServerAt = now
-        snake.velocityX = Math.cos(rawDir) * speed
-        snake.velocityY = Math.sin(rawDir) * speed
-        snake.targetX = payload.x
-        snake.targetY = payload.y
-        snake.targetAngle = rawAngle
-        snake.targetDir = rawDir
-        snake.length = payload.length || snake.length
-        snake.speed = speed
-        snake.samplePhase = 0;
-        snake.alive = payload.alive
-        snake.name = payload.name || ''
-        snake.skin = payload.skin || 'default'
-        if (typeof snake.displayLength !== 'number') snake.displayLength = snake.length
-        const rawPath = Array.isArray(payload.path) ? payload.path : []
-        const rebuiltPath = rebuildPath(rawPath, payload.x, payload.y, snake.length, rawDir)
-        smoothAssignPath(snake, rebuiltPath)
     }
 
     function rebuildPath(points, headX, headY, length, angle) {
@@ -1465,7 +1836,7 @@
         }
         const smoothed = []
         const prev = snake.renderPath
-        const blend = 0.65
+        const blend = 0.85
         const tailLock = Math.min(6, targetPath.length)
         for (let i = 0; i < targetPath.length; i++) {
             const target = targetPath[i]
@@ -1726,6 +2097,31 @@
         return a + diff * t
     }
 
+    function clamp(value, min, max) {
+        if (value < min) return min
+        if (value > max) return max
+        return value
+    }
+
+    function normalizeAngle(angle) {
+        let a = angle
+        while (a <= -Math.PI) a += Math.PI * 2
+        while (a > Math.PI) a -= Math.PI * 2
+        return a
+    }
+
+    function projectToCircle(cx, cy, radius, x, y) {
+        const dx = x - cx
+        const dy = y - cy
+        const dist = Math.hypot(dx, dy)
+        if (dist <= radius || dist === 0) return { x, y }
+        const scale = radius / dist
+        return {
+            x: cx + dx * scale,
+            y: cy + dy * scale
+        }
+    }
+
     function withAlpha(hex, alpha) {
         const value = parseInt(hex.slice(1), 16)
         const r = (value >> 16) & 255
@@ -1753,87 +2149,33 @@
     }
 
     function update(dt) {
-        const smoothPos = Math.min(1, dt * POSITION_SMOOTH)
-        const smoothAngle = Math.min(1, dt * ANGLE_SMOOTH)
         const now = performance.now()
-        for (const snake of state.snakes.values()) {
-            if (typeof snake.serverX === 'number' && typeof snake.serverY === 'number') {
-                const elapsed = Math.max(0, Math.min(MAX_PREDICTION_SECONDS, (now - (snake.lastServerAt || now)) / 1000))
-                const vx = snake.velocityX || 0
-                const vy = snake.velocityY || 0
-                const predictedX = snake.serverX + vx * elapsed
-                const predictedY = snake.serverY + vy * elapsed
-                snake.targetX = predictedX
-                snake.targetY = predictedY
-                if (vx || vy) {
-                    const heading = Math.atan2(vy, vx)
-                    if (Number.isFinite(heading)) {
-                        snake.targetDir = heading
-                        snake.targetAngle = heading
-                    }
-                } else if (typeof snake.serverAngle === 'number') {
-                    snake.targetAngle = snake.serverAngle
-                }
-                // плавно двигаем последний (головной) узел пути к предсказанной позиции,
-// чтобы не было резких замен и коротких прямых отрезков
-                if (snake.renderPath && snake.renderPath.length) {
-                    const lastIdx = snake.renderPath.length - 1
-                    const last = snake.renderPath[lastIdx]
-                    if (last) {
-                        const dx = predictedX - last.x
-                        const dy = predictedY - last.y
-                        const dist = Math.hypot(dx, dy)
-                        const maxStep = Math.max(SEGMENT_SPACING * 1.05, 8) // ограничение максимального «скачка»
-                        if (dist > maxStep) {
-                            const t = maxStep / dist
-                            last.x = last.x + dx * t
-                            last.y = last.y + dy * t
-                        } else {
-                            // небольшая интерполяция до предсказанной позиции
-                            last.x = lerp(last.x, predictedX, 0.72)
-                            last.y = lerp(last.y, predictedY, 0.72)
-                        }
-                    }
-                }
+        const estimatedServerNow = now + state.network.offset
+        const renderTime = estimatedServerNow - state.renderDelay
+        state.renderTime = renderTime
+        pruneSnapshots(renderTime)
+        const { previous, next, alpha } = resolveSnapshotPair(renderTime)
+        updateRemoteFoods(previous, next, alpha)
+        updateRemoteSnakes(previous, next, alpha)
+        updateLocalSnake(dt)
 
-            }
-            if (snake.renderPath && snake.renderPath.length > 1) {
-                const desiredLength = Math.max(SEGMENT_SPACING * 2, snake.length || snake.displayLength || 0)
-                fitPathLength(snake.renderPath, desiredLength, SEGMENT_SPACING)
-            }
-            const baseX = typeof snake.displayX === 'number' ? snake.displayX : snake.targetX
-            const baseY = typeof snake.displayY === 'number' ? snake.displayY : snake.targetY
-            const baseAngle = typeof snake.displayAngle === 'number' ? snake.displayAngle : snake.targetAngle
-            const baseDir = typeof snake.displayDir === 'number' ? snake.displayDir : snake.targetDir
-            snake.displayX = lerp(baseX, snake.targetX, smoothPos)
-            snake.displayY = lerp(baseY, snake.targetY, smoothPos)
-            snake.displayAngle = lerpAngle(baseAngle, snake.targetAngle, smoothAngle)
-            snake.displayDir = lerpAngle(baseDir, snake.targetDir, smoothAngle)
-            snake.displayLength = snake.length
-            if (!snake.alive && snake.renderPath.length) {
-                snake.renderPath = snake.renderPath.slice(-1)
-            }
-        }
-
-        const camTarget = state.meId && state.snakes.get(state.meId)
-        if (camTarget) {
-            state.camera.targetX = camTarget.displayX
-            state.camera.targetY = camTarget.displayY
+        const me = getMeSnake()
+        if (me && typeof me.displayX === 'number' && typeof me.displayY === 'number') {
+            state.camera.targetX = me.displayX
+            state.camera.targetY = me.displayY
         } else if (state.world && !state.camera.initialized) {
             state.camera.targetX = state.world.centerX
             state.camera.targetY = state.world.centerY
         }
-        const camBaseX = typeof state.camera.x === 'number' ? state.camera.x : state.camera.targetX
-        const camBaseY = typeof state.camera.y === 'number' ? state.camera.y : state.camera.targetY
-        const camK = Math.min(1, dt * CAMERA_SMOOTH)
-        state.camera.x = lerp(camBaseX, state.camera.targetX, camK)
-        state.camera.y = lerp(camBaseY, state.camera.targetY, camK)
-
+        const camBaseX = Number.isFinite(state.camera.x) ? state.camera.x : state.camera.targetX
+        const camBaseY = Number.isFinite(state.camera.y) ? state.camera.y : state.camera.targetY
+        const camBlend = Math.min(1, dt * CAMERA_SMOOTH)
+        state.camera.x = lerp(camBaseX, state.camera.targetX, camBlend)
+        state.camera.y = lerp(camBaseY, state.camera.targetY, camBlend)
+        if (!state.camera.initialized && state.world) {
+            state.camera.initialized = true
+        }
         for (const food of state.foods.values()) {
-            const baseX = typeof food.displayX === 'number' ? food.displayX : food.targetX
-            const baseY = typeof food.displayY === 'number' ? food.displayY : food.targetY
-            food.displayX = lerp(baseX, food.targetX, smoothPos)
-            food.displayY = lerp(baseY, food.targetY, smoothPos)
             food.life = Math.min(1, (food.life || 0) + dt * 3.2)
         }
     }
@@ -1909,6 +2251,12 @@
             ctx.clip()
         }
         ctx.globalCompositeOperation = 'lighter'
+        const viewWidth = (canvas.width / DPR) / zoom
+        const viewHeight = (canvas.height / DPR) / zoom
+        const minX = camX - viewWidth / 2 - CAMERA_CULL_PADDING
+        const maxX = camX + viewWidth / 2 + CAMERA_CULL_PADDING
+        const minY = camY - viewHeight / 2 - CAMERA_CULL_PADDING
+        const maxY = camY + viewHeight / 2 + CAMERA_CULL_PADDING
         for (const food of state.foods.values()) {
             const color = food.color || '#ffd166'
             const pulse = 1 + Math.sin(time * FOOD_PULSE_SPEED + (food.pulse || 0)) * 0.16
@@ -1917,6 +2265,7 @@
             const radius = (baseSize + magnitude * (food.big ? 1.45 : 1.1)) * pulse
             const fx = typeof food.displayX === 'number' ? food.displayX : food.targetX
             const fy = typeof food.displayY === 'number' ? food.displayY : food.targetY
+            if (fx < minX || fx > maxX || fy < minY || fy > maxY) continue
             ctx.globalAlpha = (food.big ? 0.95 : 0.88) * (food.life || 1)
             ctx.shadowBlur = food.big ? 38 : 24
             ctx.shadowColor = withAlpha(color, food.big ? 0.75 : 0.5)
@@ -1950,6 +2299,12 @@
             ctx.arc(state.world.centerX, state.world.centerY, state.world.radius, 0, Math.PI * 2)
             ctx.clip()
         }
+        const viewWidth = (canvas.width / DPR) / zoom
+        const viewHeight = (canvas.height / DPR) / zoom
+        const minX = camX - viewWidth / 2 - CAMERA_CULL_PADDING
+        const maxX = camX + viewWidth / 2 + CAMERA_CULL_PADDING
+        const minY = camY - viewHeight / 2 - CAMERA_CULL_PADDING
+        const maxY = camY + viewHeight / 2 + CAMERA_CULL_PADDING
         for (const snake of snakes) {
             const path = snake.renderPath
             if (!path || path.length < 2) continue
@@ -1960,6 +2315,24 @@
             const headRadius = bodyRadius * 1.02
             const headX = typeof snake.displayX === 'number' ? snake.displayX : snake.targetX
             const headY = typeof snake.displayY === 'number' ? snake.displayY : snake.targetY
+            let visible = headX >= minX && headX <= maxX && headY >= minY && headY <= maxY
+            if (!visible && Array.isArray(path)) {
+                const stride = Math.max(1, Math.floor(path.length / 12))
+                for (let i = 0; i < path.length; i += stride) {
+                    const point = path[i]
+                    if (point && point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY) {
+                        visible = true
+                        break
+                    }
+                }
+                if (!visible) {
+                    const tail = path[path.length - 1]
+                    if (tail && tail.x >= minX && tail.x <= maxX && tail.y >= minY && tail.y <= maxY) {
+                        visible = true
+                    }
+                }
+            }
+            if (!visible) continue
             const head = { x: headX, y: headY }
             path[path.length - 1] = { x: head.x, y: head.y }
 
@@ -2135,13 +2508,39 @@
 
     let lastTime = performance.now()
     function loop(now) {
-        const dt = Math.min(0.05, (now - lastTime) / 1000)
+        const dt = Math.min(MAX_UPDATE_DT, (now - lastTime) / 1000)
         lastTime = now
         update(dt)
         draw(now / 1000)
         requestAnimationFrame(loop)
     }
     requestAnimationFrame(loop)
+
+    function handlePong(message) {
+        if (!message || typeof message.t !== 'number') return
+        const sent = state.network.pending ? state.network.pending.get(message.t) : null
+        if (typeof sent !== 'number') return
+        const now = performance.now()
+        const rtt = Math.max(0, now - sent)
+        state.network.pending.delete(message.t)
+        state.network.ping = lerp(state.network.ping || rtt, rtt, 0.25)
+        state.network.lastPingAt = now
+    }
+
+    function sendPing() {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return
+        const now = performance.now()
+        if (!state.network.pending) state.network.pending = new Map()
+        if (state.network.pending.size > 20) {
+            const oldest = state.network.pending.keys().next()
+            if (oldest && typeof oldest.value !== 'undefined') {
+                state.network.pending.delete(oldest.value)
+            }
+        }
+        state.network.pending.set(now, now)
+        ws.send(JSON.stringify({ type: 'ping', t: now }))
+        state.network.lastPingAt = now
+    }
 
     function sendInput() {
         if (!ws || ws.readyState !== WebSocket.OPEN || !state.alive) return

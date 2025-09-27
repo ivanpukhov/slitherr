@@ -54,6 +54,7 @@ const cfg = {
     segmentSpacing: 6, // ✨ расстояние между сегментами
     collisionQueryRadius: 300,
     segmentSampleStep: 3,
+    collisionForgiveness: 0.92,
 
     // видимость
     viewRadius: 900,
@@ -194,11 +195,13 @@ setInterval(() => {
         .slice(0, 10)
         .map(p => ({ name: p.name, length: Math.floor(p.length) }))
 
+    const serverTime = nowMs()
     for (const p of world.players.values()) {
         const aoi = world.aoiFor(p)
         send(p.ws, {
             type: MSG_SNAPSHOT,
             tick: world.tickId,
+            serverTime,
             you: {
                 id: p.id,
                 x: p.x,
