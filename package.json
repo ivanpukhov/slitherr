@@ -1,0 +1,14 @@
+{
+  "name": "slither-mp-server",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "pg": "^8.11.5",
+    "uuid": "^9.0.1",
+    "ws": "^8.18.0"
+  }
+}
