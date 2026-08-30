@@ -1,0 +1,18 @@
+{
+  "name": "slither-mp-server",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Authoritative multiplayer snake server with AOI snapshots and spatial hashing",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "node --test --test-concurrency=1"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "ws": "^8.18.0"
+  }
+}
